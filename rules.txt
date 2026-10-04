@@ -1,0 +1,91 @@
+rules_version = '2';
+
+service cloud.firestore {
+match /databases/{database}/documents {
+
+function signedIn() {
+return request.auth != null;
+}
+
+function isAdmin() {
+return signedIn()
+&& exists(/databases/$(database)/documents/users/$(request.auth.uid))
+&& get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+in ['admin', 'super_admin'];
+}
+
+function isSuperAdmin() {
+return signedIn()
+&& exists(/databases/$(database)/documents/users/$(request.auth.uid))
+&& get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+== 'super_admin';
+}
+
+
+// =========================
+// USERS
+// =========================
+match /users/{userId} {
+
+// Friends can view profiles
+allow read: if signedIn();
+
+// New account can create its own profile
+allow create: if signedIn()
+&& request.auth.uid == userId
+// Don't let the browser create an admin account
+&& request.resource.data.role == 'user';
+
+// User can edit their own profile.
+// Admins can manage users.
+allow update: if signedIn()
+&& (
+request.auth.uid == userId
+|| isAdmin()
+);
+
+allow delete: if isAdmin();
+}
+
+
+// =========================
+// USERNAMES
+// =========================
+match /usernames/{username} {
+
+// Needed because registration checks the username
+// before Firebase Auth has signed the user in.
+allow read: if true;
+
+// Once authenticated, user can reserve the username
+// for their own UID.
+allow create: if signedIn()
+&& request.resource.data.uid == request.auth.uid;
+
+allow delete: if isAdmin();
+}
+
+
+// =========================
+// CHAT
+// =========================
+match /rooms/{roomId}/messages/{messageId} {
+
+allow read, create: if signedIn();
+
+// Admins can delete/edit messages
+allow update, delete: if isAdmin();
+}
+
+
+// =========================
+// APP SETTINGS
+// =========================
+match /app_settings/{document=**} {
+
+allow read: if signedIn();
+
+allow write: if isAdmin();
+}
+}
+}
