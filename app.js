@@ -34,7 +34,7 @@ const UI = {
 };
 
 // --- NEW: Audio Setup ---
-const writeSound = new Audio('write.mp3'); // Replace with your actual sound file path
+const writeSound = new Audio('writing.mp3'); // Replace with your actual sound file path
 writeSound.playbackRate = 1.5; // Speeds up the sound slightly
 
 // --- NEW: Browser Notification Helper ---
