@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
-import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, setDoc, getDoc, updateDoc, getDocs, writeBatch, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, setDoc, getDoc, updateDoc, getDocs, deleteDoc, arrayUnion, arrayRemove, where } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyDgou5bwByER3Tw_lL-BX1n02dgAESYft0",
@@ -14,10 +14,10 @@ const db = getFirestore(app);
 setPersistence(auth, browserLocalPersistence).catch((err) => console.warn("Auth persistence error:", err));
 
 let currentUser = null, userProfile = null;
-let userDocUnsub = null, unsubMsg = null, unsubDmMsg = null, unsubProfilePosts = null;
+let userDocUnsub = null, unsubMsg = null, unsubDmMsg = null, unsubProfilePosts = null, unsubNotifs = null;
 let isRegistering = false, isInitialLoadDone = false; 
 let currentPinnedCount = 0;
-let linksEnabledGlobally = true; // Governed by Admin
+let linksEnabledGlobally = true;
 
 const ROOM_ID = "main-room";
 const SUPER_ADMINS = ['anoimazo1', 'anointo', 'amazo'];
@@ -34,39 +34,110 @@ const writeSound = new Audio('writing.mp3'); writeSound.playbackRate = 1.3;
 
 let settings = {
     chatBoxLift: localStorage.getItem('pensup_lift') === 'true',
+    chatBoxLiftDm: localStorage.getItem('pensup_lift_dm') === 'true',
     forceToast: localStorage.getItem('pensup_force_toast') === 'true',
+    dmToast: localStorage.getItem('pensup_dm_toast') !== 'false',
     soundEnabled: localStorage.getItem('pensup_sound') !== 'false'
 };
 
 function applySettings() {
     settings.chatBoxLift ? UI.footer.classList.add('mb-12') : UI.footer.classList.remove('mb-12');
+    
+    const dmFooter = document.getElementById('dm-chat-footer');
+    if (dmFooter) {
+        settings.chatBoxLiftDm ? dmFooter.classList.add('mb-12') : dmFooter.classList.remove('mb-12');
+    }
+
     document.getElementById('setting-chatbox-lift').checked = settings.chatBoxLift;
+    if (document.getElementById('setting-chatbox-lift-dm')) {
+        document.getElementById('setting-chatbox-lift-dm').checked = settings.chatBoxLiftDm;
+    }
     document.getElementById('setting-force-toast').checked = settings.forceToast;
+    if (document.getElementById('setting-dm-toast')) {
+        document.getElementById('setting-dm-toast').checked = settings.dmToast;
+    }
     document.getElementById('setting-sound-enabled').checked = settings.soundEnabled;
 }
 
-function showToastNotification(senderName, text) {
-    const toast = document.createElement('div');
-    toast.className = "fixed top-16 left-1/2 -translate-x-1/2 bg-yellow-100 text-slate-800 px-5 py-2.5 sketched-border shadow-xl z-[100] animate-pop flex flex-col min-w-[260px] max-w-[90%] pointer-events-none";
-    let safeText = text.length > 45 ? escapeHTML(text.substring(0, 45)) + "..." : escapeHTML(text);
-    toast.innerHTML = `<span class="text-indigo-600 font-bold text-sm mb-0.5">📝 New note from ${escapeHTML(senderName)}</span><span class="text-xl leading-tight font-semibold">${safeText}</span>`;
-    document.body.appendChild(toast);
-    setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity 0.4s ease'; setTimeout(() => toast.remove(), 400); }, 3500);
+function createToastContainer() {
+    let container = document.getElementById('toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        container.className = 'fixed top-4 left-1/2 -translate-x-1/2 z-[100] flex flex-col gap-2 items-center pointer-events-none max-w-[90%] w-full sm:w-auto';
+        document.body.appendChild(container);
+    }
+    return container;
 }
 
-function notifyUser(senderName, text) {
+function showToastNotification(senderName, text, type = 'chat') {
+    const container = createToastContainer();
+    const toast = document.createElement('div');
+    const isDm = type === 'dm';
+    const bgClass = isDm ? 'bg-blue-50 border-blue-400' : 'bg-yellow-50 border-amber-400';
+    const badgeBg = isDm ? 'bg-blue-200 text-blue-900' : 'bg-amber-200 text-amber-900';
+    const typeLabel = isDm ? '📫 Direct Message' : '📝 Main Chat';
+    
+    toast.className = `p-3 ${bgClass} text-slate-800 sketched-border shadow-2xl animate-pop flex flex-col min-w-[280px] max-w-[360px] pointer-events-auto relative -rotate-1 border-2 transition-all duration-300`;
+    
+    let safeText = text.length > 50 ? escapeHTML(text.substring(0, 50)) + "..." : escapeHTML(text);
+    
+    toast.innerHTML = `
+        <div class="flex items-center justify-between border-b border-slate-300/60 pb-1 mb-1 gap-2">
+            <span class="text-xs font-bold ${badgeBg} px-2 py-0.5 rounded sketched-border-alt shrink-0">${typeLabel}</span>
+            <span class="text-sm font-bold text-indigo-600 truncate">From ${escapeHTML(senderName)}</span>
+        </div>
+        <div class="text-lg leading-tight font-semibold text-slate-800 break-words">${safeText}</div>
+    `;
+    
+    container.appendChild(toast);
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(-10px) scale(0.95)';
+        setTimeout(() => toast.remove(), 300);
+    }, 4000);
+}
+
+function notifyUser(senderName, text, type = 'chat') {
+    if (type === 'dm' && !settings.dmToast) return;
+
     if (!settings.forceToast && "Notification" in window && Notification.permission === "granted") {
         try {
-            const n = new Notification(`PensUp pro • ${senderName}`, { body: text.length > 60 ? text.substring(0, 60) + "..." : text, icon: "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📝</text></svg>" });
-            n.onclick = () => { window.focus(); n.close(); }; return;
+            const title = type === 'dm' ? `PensUp 📫 DM from ${senderName}` : `PensUp 📝 Note from ${senderName}`;
+            const n = new Notification(title, { 
+                body: text.length > 60 ? text.substring(0, 60) + "..." : text, 
+                icon: "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📝</text></svg>" 
+            });
+            n.onclick = () => { window.focus(); n.close(); }; 
+            return;
         } catch (e) { console.warn("Native notify failed:", e); }
     }
-    showToastNotification(senderName, text);
+    showToastNotification(senderName, text, type);
+}
+
+function listenForNotifications(uid) {
+    if (unsubNotifs) unsubNotifs();
+    let isInitialNotifLoad = false;
+    
+    unsubNotifs = onSnapshot(collection(db, `users/${uid}/notifications`), (snapshot) => {
+        if (!isInitialNotifLoad) {
+            isInitialNotifLoad = true;
+            return;
+        }
+        snapshot.docChanges().forEach((change) => {
+            if (change.type === "added") {
+                const data = change.doc.data();
+                if (data.type === 'dm') {
+                    notifyUser(data.senderName, data.text, 'dm');
+                }
+                deleteDoc(change.doc.ref).catch(e => console.warn("Notification cleanup error", e));
+            }
+        });
+    });
 }
 
 const escapeHTML = (str) => str ? String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;") : '';
 
-// Link Parsing Logic
 const parseLinks = (safeText) => {
     if (!linksEnabledGlobally) return safeText.replace(/(https?:\/\/[^\s]+)/g, '<span class="italic text-slate-400 bg-slate-100 px-1 rounded">[Link Disabled by Admin]</span>');
     return safeText.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" class="text-blue-600 underline font-semibold hover:text-blue-800 break-all pointer-events-auto" onclick="event.stopPropagation()">$1</a>');
@@ -92,7 +163,7 @@ document.getElementById('btn-register').onclick = async () => {
         const cred = await createUserWithEmailAndPassword(auth, `${u}@notebook.local`, p);
         const role = SUPER_ADMINS.includes(u) ? 'super_admin' : 'user';
         await setDoc(doc(db, "usernames", u), { uid: cred.user.uid });
-        await setDoc(doc(db, "users", cred.user.uid), { username: u, role: role, suspended: false, emoji: '👤', bio: '' });
+        await setDoc(doc(db, "users", cred.user.uid), { username: u, role: role, suspended: false, emoji: '👤', bio: '', following: [] });
         isRegistering = false; syncUserProfile(cred.user);
     } catch (e) { isRegistering = false; document.getElementById('auth-loading').classList.add('hidden'); showError(e.message); }
 };
@@ -114,7 +185,10 @@ function syncUserProfile(user) {
         (docSnap) => {
             if (isRegistering) return; 
             if (!docSnap.exists() || docSnap.data().suspended) { signOut(auth); showError(docSnap.data()?.suspended ? "Account suspended." : "Account missing."); return; }
-            userProfile = docSnap.data(); currentUser = user;
+            userProfile = docSnap.data(); 
+            if (!userProfile.following) userProfile.following = [];
+            currentUser = user;
+            
             document.getElementById('auth-loading').classList.add('hidden');
             UI.auth.classList.add('hidden'); UI.launch.classList.remove('hidden');
             setTimeGreeting();
@@ -126,6 +200,8 @@ function syncUserProfile(user) {
             if (['super_admin', 'admin'].includes(userProfile.role)) UI.adminBtn.classList.remove('hidden'); else UI.adminBtn.classList.add('hidden');
             if (userProfile.role === 'super_admin') document.getElementById('btn-edit-board').classList.remove('hidden');
             
+            listenForNotifications(user.uid);
+
             onSnapshot(doc(db, "app_settings", "launch_screen"), (d) => { document.getElementById('launch-board-text').textContent = d.exists() ? d.data().text : "Welcome to the study group!"; });
             onSnapshot(doc(db, "app_settings", "global_settings"), (d) => { 
                 linksEnabledGlobally = d.exists() ? (d.data().linksEnabled !== false) : true;
@@ -145,6 +221,7 @@ onAuthStateChanged(auth, (user) => {
         currentUser = null; userProfile = null; document.getElementById('auth-loading').classList.add('hidden');
         UI.app.classList.replace('flex', 'hidden'); UI.launch.classList.add('hidden'); UI.auth.classList.remove('hidden');
         document.getElementById('auth-password').value = '';
+        if (unsubNotifs) { unsubNotifs(); unsubNotifs = null; }
     }
 });
 
@@ -174,11 +251,17 @@ document.getElementById('btn-settings').onclick = () => { applySettings(); setti
 document.getElementById('settings-close').onclick = () => settingsModal.classList.add('hidden');
 document.getElementById('btn-save-settings').onclick = () => {
     settings.chatBoxLift = document.getElementById('setting-chatbox-lift').checked;
+    settings.chatBoxLiftDm = document.getElementById('setting-chatbox-lift-dm').checked;
     settings.forceToast = document.getElementById('setting-force-toast').checked;
+    settings.dmToast = document.getElementById('setting-dm-toast').checked;
     settings.soundEnabled = document.getElementById('setting-sound-enabled').checked;
+
     localStorage.setItem('pensup_lift', settings.chatBoxLift);
+    localStorage.setItem('pensup_lift_dm', settings.chatBoxLiftDm);
     localStorage.setItem('pensup_force_toast', settings.forceToast);
+    localStorage.setItem('pensup_dm_toast', settings.dmToast);
     localStorage.setItem('pensup_sound', settings.soundEnabled);
+
     applySettings(); settingsModal.classList.add('hidden');
 };
 
@@ -188,7 +271,7 @@ document.getElementById('btn-enter-chat').onclick = () => {
     applySettings(); loadMessages();
 };
 document.getElementById('btn-back-launch').onclick = () => { UI.app.classList.replace('flex', 'hidden'); UI.launch.classList.remove('hidden'); if(unsubMsg) unsubMsg(); };
-document.getElementById('user-badge').onclick = () => { if(currentUser) showProfile(currentUser.uid); }; // Open own profile
+document.getElementById('user-badge').onclick = () => { if(currentUser) showProfile(currentUser.uid); };
 
 // --- Main Chat Logic ---
 function loadMessages() {
@@ -206,7 +289,7 @@ function loadMessages() {
             if (isInitialLoadDone) {
                 snapshot.docChanges().forEach((change) => {
                     const data = change.doc.data();
-                    if (change.type === "added" && data.senderId !== currentUser.uid && !data.isDeleted) notifyUser(data.senderName, data.text);
+                    if (change.type === "added" && data.senderId !== currentUser.uid && !data.isDeleted) notifyUser(data.senderName, data.text, 'chat');
                 });
             }
             isInitialLoadDone = true;
@@ -263,7 +346,7 @@ window.deleteMsg = async (roomId, msgId) => {
     if(confirm("Rip out this note?")) { await updateDoc(doc(db, `rooms/${roomId}/messages`, msgId), { isDeleted: true, deletedBy: userProfile.username, text: "", isPinned: false }); }
 };
 
-// Generic Message Renderer (used by Main Chat & DMs)
+// Generic Message Renderer
 function renderMessage(id, data, containerEl, roomStr) {
     const isSelf = data.senderId === currentUser.uid;
     const isSuperAdmin = userProfile.role === 'super_admin';
@@ -272,10 +355,13 @@ function renderMessage(id, data, containerEl, roomStr) {
     
     let displayHtml = '';
     let bgClass = isSelf ? 'bg-yellow-100' : 'bg-white';
+    if (roomStr.startsWith('dm_')) {
+        bgClass = isSelf ? 'bg-blue-100 border-blue-300' : 'bg-white border-amber-200';
+    }
     
     if (data.isDeleted) {
         displayHtml = `<span class="italic text-slate-500 text-lg opacity-80">✂ Ripped out by ${escapeHTML(data.deletedBy)}</span>`;
-        bgClass = 'bg-slate-200/50'; 
+        bgClass = 'bg-slate-200/50 border-slate-300'; 
     } else {
         displayHtml = parseLinks(escapeHTML(data.text));
     }
@@ -284,14 +370,30 @@ function renderMessage(id, data, containerEl, roomStr) {
     const delBtn = (canDelete && !data.isDeleted) ? `<button onclick="deleteMsg('${roomStr}', '${id}')" class="bg-rose-200 text-rose-700 rounded-full w-6 h-6 text-xs flex items-center justify-center hover:scale-110 sketched-border" title="Delete">✖</button>` : '';
     const actionControls = (!data.isDeleted && (pinBtn || delBtn)) ? `<div class="absolute -right-2 -top-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">${pinBtn}${delBtn}</div>` : '';
     const pinnedBadge = data.isPinned ? `<span class="text-xs bg-amber-200 text-amber-900 font-bold px-1.5 py-0.5 rounded sketched-border-alt mb-1 inline-block">📌 Pinned</span>` : '';
-    const header = !isSelf ? `<div class="flex items-center gap-1 mb-1 cursor-pointer hover:opacity-80" onclick="showProfile('${data.senderId}')"><span class="text-2xl">${escapeHTML(data.senderEmoji || '👤')}</span><span class="text-sm font-bold text-indigo-500 pl-1">${escapeHTML(data.senderName)}</span></div>` : '';
+    const header = (!isSelf && roomStr === ROOM_ID) ? `<div class="flex items-center gap-1 mb-1 cursor-pointer hover:opacity-80" onclick="showProfile('${data.senderId}')"><span class="text-2xl">${escapeHTML(data.senderEmoji || '👤')}</span><span class="text-sm font-bold text-indigo-500 pl-1">${escapeHTML(data.senderName)}</span></div>` : '';
 
     const wrapper = document.createElement('div');
     wrapper.id = `msg-${id}`; wrapper.className = `group flex flex-col gap-1 max-w-[85%] animate-pop relative transition-all duration-300 ${isSelf ? 'self-end items-end' : 'self-start items-start'}`;
-    wrapper.innerHTML = `${header}${pinnedBadge}<div class="${bgClass} text-slate-800 p-2 text-2xl sketched-border relative break-words shadow-sm">${displayHtml} ${actionControls}</div><span class="text-xs font-bold opacity-60 px-1 mt-0.5">${timeStr}</span>`;
+    wrapper.innerHTML = `${header}${pinnedBadge}<div class="${bgClass} text-slate-800 p-2.5 text-2xl sketched-border relative break-words shadow-xs">${displayHtml} ${actionControls}</div><span class="text-xs font-bold opacity-60 px-1 mt-0.5">${timeStr}</span>`;
     containerEl.appendChild(wrapper);
 }
 
+// --- FOLLOWING LOGIC ---
+window.toggleFollow = async (targetUid) => {
+    if (!currentUser || currentUser.uid === targetUid) return;
+    const isFollowing = (userProfile.following || []).includes(targetUid);
+    const userRef = doc(db, "users", currentUser.uid);
+
+    try {
+        if (isFollowing) {
+            await updateDoc(userRef, { following: arrayRemove(targetUid) });
+        } else {
+            await updateDoc(userRef, { following: arrayUnion(targetUid) });
+        }
+        if (activeProfileUid) showProfile(activeProfileUid);
+        if (!dmDirModal.classList.contains('hidden')) renderUserDirectory(allUsersCache);
+    } catch(e) { console.error("Follow error:", e); }
+};
 
 // --- POSTS & PROFILE LOGIC ---
 let activeProfileUid = null;
@@ -302,17 +404,25 @@ window.showProfile = async (uid) => {
     document.getElementById('p-modal-name').textContent = "Loading...";
     document.getElementById('profile-posts-list').innerHTML = '<div class="text-center text-slate-500 italic mt-4">Loading posts...</div>';
     
-    // UI states
     const dmBtn = document.getElementById('p-modal-dm-btn');
+    const followBtn = document.getElementById('p-modal-follow-btn');
     const createBox = document.getElementById('create-post-box');
     
     if(uid === currentUser.uid) {
         dmBtn.classList.add('hidden');
+        followBtn.classList.add('hidden');
         createBox.classList.remove('hidden');
     } else {
         dmBtn.classList.remove('hidden');
-        dmBtn.onclick = () => openDmChat(uid, document.getElementById('p-modal-name').textContent);
+        followBtn.classList.remove('hidden');
         createBox.classList.add('hidden');
+        
+        const isFollowing = (userProfile.following || []).includes(uid);
+        followBtn.textContent = isFollowing ? "⭐ Following" : "+ Follow";
+        followBtn.className = isFollowing 
+            ? "text-sm font-bold px-3 py-1 bg-emerald-500 text-white rounded sketched-border hover:bg-emerald-600 transition-transform" 
+            : "text-sm font-bold px-3 py-1 bg-amber-400 text-amber-950 rounded sketched-border hover:bg-amber-500 transition-transform";
+        followBtn.onclick = () => toggleFollow(uid);
     }
 
     try {
@@ -323,6 +433,13 @@ window.showProfile = async (uid) => {
             document.getElementById('p-modal-name').textContent = p.username;
             document.getElementById('p-modal-role').textContent = p.role.replace('_', ' ').toUpperCase();
             document.getElementById('p-modal-bio').textContent = p.bio ? `"${p.bio}"` : '"Quiet observer."';
+            document.getElementById('p-modal-following-count').textContent = `${(p.following || []).length} Following`;
+            
+            dmBtn.onclick = () => openDmChat(uid, p.username, p.emoji, p.bio);
+
+            // Fetch Followers Count
+            const followersSnap = await getDocs(query(collection(db, "users"), where("following", "array-contains", uid)));
+            document.getElementById('p-modal-followers-count').textContent = `${followersSnap.size} Followers`;
         }
         loadProfilePosts(uid);
     } catch (e) { console.error("Profile fetch error:", e); }
@@ -333,6 +450,17 @@ document.getElementById('profile-close').onclick = () => {
     if(unsubProfilePosts) { unsubProfilePosts(); unsubProfilePosts = null; }
 };
 
+window.deletePost = async (postOwnerUid, postId) => {
+    if (confirm("Are you sure you want to delete this post?")) {
+        try {
+            await deleteDoc(doc(db, `users/${postOwnerUid}/posts/${postId}`));
+        } catch(e) {
+            console.error("Delete post error:", e);
+            alert("Could not delete post.");
+        }
+    }
+};
+
 function loadProfilePosts(uid) {
     if(unsubProfilePosts) unsubProfilePosts();
     unsubProfilePosts = onSnapshot(query(collection(db, `users/${uid}/posts`), orderBy("createdAt", "desc")), (snapshot) => {
@@ -340,17 +468,26 @@ function loadProfilePosts(uid) {
         listEl.innerHTML = '';
         if(snapshot.empty) { listEl.innerHTML = '<div class="text-center text-slate-500 italic mt-4">No posts yet.</div>'; return; }
         
+        const canDeletePosts = uid === currentUser.uid || ['super_admin', 'admin'].includes(userProfile.role);
+
         snapshot.forEach(docSnap => {
             const post = docSnap.data();
             const likes = post.likes || []; const dislikes = post.dislikes || [];
             const hasLiked = likes.includes(currentUser.uid); const hasDisliked = dislikes.includes(currentUser.uid);
             
             const div = document.createElement('div');
-            div.className = "bg-white p-3 sketched-border-alt flex flex-col gap-2";
+            div.className = "bg-white p-3 sketched-border-alt flex flex-col gap-2 relative group";
             const timeStr = post.createdAt ? post.createdAt.toDate().toLocaleDateString() : '';
             
+            const deleteBtnHtml = canDeletePosts 
+                ? `<button onclick="deletePost('${uid}', '${docSnap.id}')" class="text-rose-500 hover:text-rose-700 font-bold p-1 hover:scale-110 transition-transform text-sm" title="Delete Post">✖</button>` 
+                : '';
+
             div.innerHTML = `
-                <div class="text-lg text-slate-800 break-words">${parseLinks(escapeHTML(post.text))}</div>
+                <div class="flex justify-between items-start gap-2">
+                    <div class="text-lg text-slate-800 break-words flex-1">${parseLinks(escapeHTML(post.text))}</div>
+                    ${deleteBtnHtml}
+                </div>
                 <div class="flex justify-between items-center text-sm border-t border-slate-100 pt-2 mt-1">
                     <span class="text-slate-400 font-bold">${timeStr}</span>
                     <div class="flex gap-3">
@@ -386,56 +523,137 @@ window.togglePostVote = async (postOwnerUid, postId, type) => {
     
     let updates = {};
     if(isLike) {
-        if(data.likes?.includes(uid)) updates.likes = arrayRemove(uid); // unlike
+        if(data.likes?.includes(uid)) updates.likes = arrayRemove(uid);
         else { updates.likes = arrayUnion(uid); updates.dislikes = arrayRemove(uid); }
     } else {
-        if(data.dislikes?.includes(uid)) updates.dislikes = arrayRemove(uid); // undislike
+        if(data.dislikes?.includes(uid)) updates.dislikes = arrayRemove(uid);
         else { updates.dislikes = arrayUnion(uid); updates.likes = arrayRemove(uid); }
     }
     await updateDoc(postRef, updates);
 };
 
-
 // --- DIRECT MESSAGING LOGIC ---
 let activeDmId = null;
 let activeDmTargetId = null;
+let activeDmTargetUser = null;
+let allUsersCache = [];
+let activeDmTab = 'all'; 
 
 const dmDirModal = document.getElementById('dm-directory-modal');
 const dmChatModal = document.getElementById('dm-chat-modal');
 const dmInput = document.getElementById('dm-message-input');
 const dmSendBtn = document.getElementById('btn-send-dm');
 
+document.getElementById('dm-tab-all').onclick = () => {
+    activeDmTab = 'all';
+    document.getElementById('dm-tab-all').className = "flex-1 py-1.5 px-3 font-bold text-sm bg-indigo-500 text-white sketched-border transition-colors";
+    document.getElementById('dm-tab-following').className = "flex-1 py-1.5 px-3 font-bold text-sm bg-white text-slate-700 sketched-border hover:bg-amber-100 transition-colors";
+    renderUserDirectory(allUsersCache);
+};
+
+document.getElementById('dm-tab-following').onclick = () => {
+    activeDmTab = 'following';
+    document.getElementById('dm-tab-following').className = "flex-1 py-1.5 px-3 font-bold text-sm bg-amber-400 text-amber-950 sketched-border transition-colors";
+    document.getElementById('dm-tab-all').className = "flex-1 py-1.5 px-3 font-bold text-sm bg-white text-slate-700 sketched-border hover:bg-amber-100 transition-colors";
+    renderUserDirectory(allUsersCache);
+};
+
 document.getElementById('btn-open-dms').onclick = async () => {
     dmDirModal.classList.remove('hidden');
     const list = document.getElementById('dm-user-list');
-    list.innerHTML = 'Loading directory...';
+    const searchInput = document.getElementById('dm-search-input');
+    if (searchInput) searchInput.value = '';
+
+    list.innerHTML = '<div class="text-center p-4 italic text-slate-500">Checking mailbox directory...</div>';
     try {
         const snap = await getDocs(collection(db, "users"));
-        list.innerHTML = '';
+        allUsersCache = [];
         snap.forEach(d => {
-            if(d.id === currentUser.uid) return;
-            const u = d.data();
-            const div = document.createElement('div');
-            div.className = "flex items-center gap-3 p-2 bg-slate-50 sketched-border cursor-pointer hover:bg-blue-50 transition-colors";
-            div.onclick = () => openDmChat(d.id, u.username);
-            div.innerHTML = `<span class="text-3xl">${escapeHTML(u.emoji||'👤')}</span> <span class="font-bold text-lg text-slate-800">${escapeHTML(u.username)}</span>`;
-            list.appendChild(div);
+            if(d.id !== currentUser.uid) {
+                allUsersCache.push({ id: d.id, ...d.data() });
+            }
         });
-    } catch(e) { list.innerHTML = 'Error loading directory.'; console.error(e); }
+        document.getElementById('dm-following-tab-count').textContent = (userProfile.following || []).length;
+        renderUserDirectory(allUsersCache);
+    } catch(e) { list.innerHTML = '<div class="text-center p-4 text-rose-500 font-bold">Error loading directory.</div>'; console.error(e); }
 };
 document.getElementById('dm-directory-close').onclick = () => dmDirModal.classList.add('hidden');
 
-function openDmChat(targetUid, targetName) {
-    document.getElementById('profile-modal').classList.add('hidden'); // close profile if open
+function renderUserDirectory(users) {
+    const list = document.getElementById('dm-user-list');
+    const searchQ = document.getElementById('dm-search-input')?.value.trim().toLowerCase() || '';
+    list.innerHTML = '';
+    
+    let filtered = users.filter(u => {
+        const matchesSearch = u.username.toLowerCase().includes(searchQ) || (u.bio && u.bio.toLowerCase().includes(searchQ));
+        if (activeDmTab === 'following') {
+            return matchesSearch && (userProfile.following || []).includes(u.id);
+        }
+        return matchesSearch;
+    });
+
+    if (filtered.length === 0) {
+        list.innerHTML = `<div class="text-center p-6 text-slate-400 italic">${activeDmTab === 'following' ? 'You are not following anyone yet.' : 'No notebook owners found.'}</div>`;
+        return;
+    }
+
+    filtered.forEach(u => {
+        const isFollowing = (userProfile.following || []).includes(u.id);
+        const div = document.createElement('div');
+        div.className = "flex items-center justify-between p-3 bg-white/80 sketched-border cursor-pointer hover:bg-amber-100/80 transition-all hover:-translate-y-0.5 group shadow-xs gap-2";
+        div.onclick = () => openDmChat(u.id, u.username, u.emoji, u.bio);
+        div.innerHTML = `
+            <div class="flex items-center gap-3 overflow-hidden min-w-0">
+                <span class="text-3xl bg-amber-50 p-1.5 rounded-full sketched-border shrink-0">${escapeHTML(u.emoji||'👤')}</span>
+                <div class="flex flex-col min-w-0">
+                    <div class="flex items-center gap-1.5">
+                        <span class="font-bold text-lg text-slate-800 truncate">${escapeHTML(u.username)}</span>
+                        ${isFollowing ? '<span class="text-xs text-amber-600" title="Following">⭐</span>' : ''}
+                    </div>
+                    <span class="text-xs text-slate-500 italic truncate">${escapeHTML(u.bio || 'No bio scribbled')}</span>
+                </div>
+            </div>
+            <div class="flex items-center gap-1 shrink-0">
+                <button onclick="event.stopPropagation(); toggleFollow('${u.id}')" class="text-xs font-bold px-2 py-1.5 rounded sketched-border hover:scale-105 ${isFollowing ? 'bg-amber-200 text-amber-900' : 'bg-slate-100 text-slate-600'}" title="${isFollowing ? 'Unfollow' : 'Follow'}">
+                    ${isFollowing ? '⭐' : '+ Follow'}
+                </button>
+                <button class="bg-blue-500 text-white text-xs font-bold px-2.5 py-1.5 rounded sketched-border-alt hover:bg-blue-600 group-hover:scale-105 transition-transform">
+                    Chat ➔
+                </button>
+            </div>
+        `;
+        list.appendChild(div);
+    });
+}
+
+const searchEl = document.getElementById('dm-search-input');
+if (searchEl) {
+    searchEl.oninput = () => renderUserDirectory(allUsersCache);
+}
+
+function openDmChat(targetUid, targetName, targetEmoji, targetBio) {
+    document.getElementById('profile-modal').classList.add('hidden');
     dmDirModal.classList.add('hidden');
     dmChatModal.classList.remove('hidden');
+
+    activeDmTargetUser = { id: targetUid, username: targetName, emoji: targetEmoji, bio: targetBio };
+
     document.getElementById('dm-chat-title').textContent = `@${targetName}`;
+    document.getElementById('dm-header-avatar').textContent = targetEmoji || '👤';
+    document.getElementById('dm-header-bio').textContent = targetBio ? `"${targetBio}"` : "Private Notebook Note";
+
+    const isFollowing = (userProfile.following || []).includes(targetUid);
+    const badge = document.getElementById('dm-header-following-badge');
+    isFollowing ? badge.classList.remove('hidden') : badge.classList.add('hidden');
+
+    document.getElementById('dm-header-user-info').onclick = () => showProfile(targetUid);
+    document.getElementById('dm-header-profile-btn').onclick = () => showProfile(targetUid);
     
-    // Sort UIDs to ensure consistent Room ID for both participants
     const uids = [currentUser.uid, targetUid].sort();
     activeDmId = `dm_${uids[0]}_${uids[1]}`;
     activeDmTargetId = targetUid;
     
+    applySettings();
     loadDmMessages();
 }
 
@@ -443,16 +661,27 @@ document.getElementById('btn-close-dm-chat').onclick = () => {
     dmChatModal.classList.add('hidden');
     if(unsubDmMsg) { unsubDmMsg(); unsubDmMsg = null; }
     activeDmId = null;
+    activeDmTargetId = null;
+    activeDmTargetUser = null;
 };
 
 function loadDmMessages() {
     if(unsubDmMsg) unsubDmMsg();
     const container = document.getElementById('dm-messages-container');
-    container.innerHTML = '<div class="text-center mt-4">Loading private chat...</div>';
+    container.innerHTML = '<div class="text-center mt-6 font-bold text-slate-500 italic">Opening notebook letter...</div>';
     
     unsubDmMsg = onSnapshot(query(collection(db, `rooms/${activeDmId}/messages`), orderBy("createdAt", "asc")), (snapshot) => {
         container.innerHTML = '';
-        if(snapshot.empty) { container.innerHTML = '<div class="text-center text-slate-500 italic mt-10">Start the conversation!</div>'; return; }
+        if(snapshot.empty) { 
+            const targetName = activeDmTargetUser?.username || 'user';
+            container.innerHTML = `
+                <div class="flex flex-col items-center justify-center my-auto p-6 text-center text-slate-500 gap-2">
+                    <span class="text-5xl animate-bounce">💌</span>
+                    <span class="font-['Permanent_Marker'] text-2xl text-slate-700">No Private Notes Yet</span>
+                    <p class="text-sm italic max-w-xs">Scribble a note below to start your private conversation with @${escapeHTML(targetName)}.</p>
+                </div>`; 
+            return; 
+        }
         
         snapshot.forEach(docSnap => renderMessage(docSnap.id, docSnap.data(), container, activeDmId));
         container.scrollTo(0, container.scrollHeight);
@@ -468,12 +697,23 @@ dmSendBtn.onclick = async () => {
             senderId: currentUser.uid, senderName: userProfile.username, senderEmoji: userProfile.emoji || '👤',
             text: text, createdAt: serverTimestamp(), isDeleted: false, isPinned: false
         });
+
+        if (activeDmTargetId) {
+            await addDoc(collection(db, `users/${activeDmTargetId}/notifications`), {
+                senderId: currentUser.uid,
+                senderName: userProfile.username,
+                text: text,
+                createdAt: serverTimestamp(),
+                type: 'dm',
+                roomId: activeDmId
+            }).catch(e => console.warn("DM notification dispatch error:", e));
+        }
+
         dmInput.value = ''; updateDmInput();
     } catch (e) { console.error("DM Send error:", e); }
 };
 const updateDmInput = () => { dmSendBtn.disabled = !dmInput.value.trim(); dmInput.style.height = 'auto'; dmInput.style.height = Math.min(dmInput.scrollHeight, 120) + 'px'; };
 dmInput.addEventListener('input', updateDmInput);
-
 
 // --- ADMIN SYSTEM ---
 const adminModal = document.getElementById('admin-modal');

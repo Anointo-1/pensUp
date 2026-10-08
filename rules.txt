@@ -10,8 +10,7 @@ return request.auth != null;
 function isAdmin() {
 return signedIn()
 && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-&& get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
-in ['admin', 'super_admin'];
+&& get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'super_admin'];
 }
 
 match /users/{userId} {
@@ -19,6 +18,16 @@ allow read: if signedIn();
 allow create: if signedIn() && request.auth.uid == userId && request.resource.data.role == 'user';
 allow update: if signedIn() && (request.auth.uid == userId || isAdmin());
 allow delete: if isAdmin();
+
+match /posts/{postId} {
+allow read, create, update: if signedIn();
+allow delete: if signedIn() && (request.auth.uid == userId || isAdmin());
+}
+
+match /notifications/{notifId} {
+allow read, delete: if signedIn() && request.auth.uid == userId;
+allow create: if signedIn();
+}
 }
 
 match /usernames/{username} {
