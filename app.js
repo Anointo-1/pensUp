@@ -14,10 +14,11 @@ const db = getFirestore(app);
 setPersistence(auth, browserLocalPersistence).catch((err) => console.warn("Auth persistence error:", err));
 
 let currentUser = null, userProfile = null;
-let userDocUnsub = null, unsubMsg = null, unsubDmMsg = null, unsubProfilePosts = null, unsubNotifs = null;
+let userDocUnsub = null, unsubMsg = null, unsubDmMsg = null, unsubProfilePosts = null, unsubNotifs = null, unsubFeed = null, unsubPuzzles = null;
 let isRegistering = false, isInitialLoadDone = false; 
 let currentPinnedCount = 0;
 let linksEnabledGlobally = true;
+let attachedDoodleBase64 = null;
 
 const ROOM_ID = "main-room";
 const SUPER_ADMINS = ['anoimazo1', 'anointo', 'amazo'];
@@ -37,7 +38,8 @@ let settings = {
     chatBoxLiftDm: localStorage.getItem('pensup_lift_dm') === 'true',
     forceToast: localStorage.getItem('pensup_force_toast') === 'true',
     dmToast: localStorage.getItem('pensup_dm_toast') !== 'false',
-    soundEnabled: localStorage.getItem('pensup_sound') !== 'false'
+    soundEnabled: localStorage.getItem('pensup_sound') !== 'false',
+    fullScreen: localStorage.getItem('pensup_fullscreen') === 'true'
 };
 
 function applySettings() {
@@ -57,6 +59,17 @@ function applySettings() {
         document.getElementById('setting-dm-toast').checked = settings.dmToast;
     }
     document.getElementById('setting-sound-enabled').checked = settings.soundEnabled;
+    document.getElementById('setting-fullscreen').checked = settings.fullScreen;
+
+    if (settings.fullScreen) {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(e => console.warn("Fullscreen request blocked:", e));
+        }
+    } else {
+        if (document.fullscreenElement) {
+            document.exitFullscreen().catch(e => console.warn("Exit fullscreen failed:", e));
+        }
+    }
 }
 
 function createToastContainer() {
@@ -172,12 +185,12 @@ document.getElementById('btn-login').onclick = async () => {
     const u = document.getElementById('auth-username').value.trim().toLowerCase();
     const p = document.getElementById('auth-password').value;
     if(!u || !p) return showError("Please enter credentials.");
-    document.getElementById('auth-loading').classList.remove('hidden');
+    document.getElementById('auth-loading').classList.add('hidden');
     try { await signInWithEmailAndPassword(auth, `${u}@notebook.local`, p); } 
     catch (e) { document.getElementById('auth-loading').classList.add('hidden'); showError("Invalid username or password."); }
 };
 
-document.getElementById('btn-logout-launch').onclick = () => { document.getElementById('auth-loading').classList.remove('hidden'); signOut(auth); };
+document.getElementById('btn-logout-launch').onclick = () => { document.getElementById('auth-loading').classList.add('hidden'); signOut(auth); };
 
 function syncUserProfile(user) {
     if (userDocUnsub) { userDocUnsub(); userDocUnsub = null; }
@@ -197,7 +210,13 @@ function syncUserProfile(user) {
             document.getElementById('launch-bio').value = userProfile.bio || '';
             document.getElementById('user-badge').textContent = `${userProfile.emoji || '👤'} My Profile`;
             
-            if (['super_admin', 'admin'].includes(userProfile.role)) UI.adminBtn.classList.remove('hidden'); else UI.adminBtn.classList.add('hidden');
+            if (['super_admin', 'admin'].includes(userProfile.role)) {
+                UI.adminBtn.classList.remove('hidden');
+                document.getElementById('btn-open-puzzle-creator').classList.remove('hidden');
+            } else {
+                UI.adminBtn.classList.add('hidden');
+                document.getElementById('btn-open-puzzle-creator').classList.add('hidden');
+            }
             if (userProfile.role === 'super_admin') document.getElementById('btn-edit-board').classList.remove('hidden');
             
             listenForNotifications(user.uid);
@@ -224,6 +243,34 @@ onAuthStateChanged(auth, (user) => {
         if (unsubNotifs) { unsubNotifs(); unsubNotifs = null; }
     }
 });
+
+// Navigation Tab Switcher (Bottom Strip)
+const tabChat = document.getElementById('nav-tab-chat');
+const tabFeed = document.getElementById('nav-tab-feed');
+const tabArcade = document.getElementById('nav-tab-arcade');
+const viewChat = document.getElementById('view-chat');
+const viewFeed = document.getElementById('view-feed');
+const viewArcade = document.getElementById('view-arcade');
+
+tabChat.onclick = () => switchView('chat');
+tabFeed.onclick = () => { switchView('feed'); loadGlobalFeed(); };
+tabArcade.onclick = () => { switchView('arcade'); loadArcadePuzzles(); };
+
+function switchView(v) {
+    viewChat.classList.add('hidden'); viewFeed.classList.add('hidden'); viewArcade.classList.add('hidden');
+    tabChat.className = tabFeed.className = tabArcade.className = "px-3 py-1 font-bold text-sm bg-white text-slate-700 rounded sketched-border hover:bg-yellow-200 transition-colors";
+    
+    if (v === 'chat') {
+        viewChat.classList.remove('hidden');
+        tabChat.className = "px-3 py-1 font-bold text-sm bg-indigo-500 text-white rounded sketched-border transition-colors";
+    } else if (v === 'feed') {
+        viewFeed.classList.remove('hidden');
+        tabFeed.className = "px-3 py-1 font-bold text-sm bg-indigo-500 text-white rounded sketched-border transition-colors";
+    } else if (v === 'arcade') {
+        viewArcade.classList.remove('hidden');
+        tabArcade.className = "px-3 py-1 font-bold text-sm bg-indigo-500 text-white rounded sketched-border transition-colors";
+    }
+}
 
 // Emoji Handlers
 const emojiModal = document.getElementById('emoji-modal');
@@ -255,12 +302,14 @@ document.getElementById('btn-save-settings').onclick = () => {
     settings.forceToast = document.getElementById('setting-force-toast').checked;
     settings.dmToast = document.getElementById('setting-dm-toast').checked;
     settings.soundEnabled = document.getElementById('setting-sound-enabled').checked;
+    settings.fullScreen = document.getElementById('setting-fullscreen').checked;
 
     localStorage.setItem('pensup_lift', settings.chatBoxLift);
     localStorage.setItem('pensup_lift_dm', settings.chatBoxLiftDm);
     localStorage.setItem('pensup_force_toast', settings.forceToast);
     localStorage.setItem('pensup_dm_toast', settings.dmToast);
     localStorage.setItem('pensup_sound', settings.soundEnabled);
+    localStorage.setItem('pensup_fullscreen', settings.fullScreen);
 
     applySettings(); settingsModal.classList.add('hidden');
 };
@@ -346,7 +395,6 @@ window.deleteMsg = async (roomId, msgId) => {
     if(confirm("Rip out this note?")) { await updateDoc(doc(db, `rooms/${roomId}/messages`, msgId), { isDeleted: true, deletedBy: userProfile.username, text: "", isPinned: false }); }
 };
 
-// Generic Message Renderer
 function renderMessage(id, data, containerEl, roomStr) {
     const isSelf = data.senderId === currentUser.uid;
     const isSuperAdmin = userProfile.role === 'super_admin';
@@ -395,7 +443,66 @@ window.toggleFollow = async (targetUid) => {
     } catch(e) { console.error("Follow error:", e); }
 };
 
-// --- POSTS & PROFILE LOGIC ---
+// --- CANVAS DOODLE PAD LOGIC ---
+const doodleModal = document.getElementById('doodle-modal');
+const doodleCanvas = document.getElementById('doodle-canvas');
+const ctx = doodleCanvas.getContext('2d');
+let isDrawing = false;
+
+document.getElementById('btn-open-doodle-modal').onclick = () => openDoodleModal();
+document.getElementById('doodle-close').onclick = () => doodleModal.classList.add('hidden');
+
+function openDoodleModal() {
+    doodleModal.classList.remove('hidden');
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    if (!attachedDoodleBase64) clearDoodle();
+}
+
+function clearDoodle() {
+    ctx.clearRect(0, 0, doodleCanvas.width, doodleCanvas.height);
+}
+document.getElementById('btn-clear-doodle').onclick = clearDoodle;
+
+const getPos = (e) => {
+    const rect = doodleCanvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return { x: clientX - rect.left, y: clientY - rect.top };
+};
+
+doodleCanvas.onmousedown = doodleCanvas.ontouchstart = (e) => {
+    isDrawing = true;
+    const pos = getPos(e);
+    ctx.beginPath();
+    ctx.moveTo(pos.x, pos.y);
+    e.preventDefault();
+};
+
+doodleCanvas.onmousemove = doodleCanvas.ontouchmove = (e) => {
+    if (!isDrawing) return;
+    const pos = getPos(e);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.stroke();
+    e.preventDefault();
+};
+
+window.onmouseup = window.ontouchend = () => { isDrawing = false; };
+
+document.getElementById('btn-attach-doodle').onclick = () => {
+    attachedDoodleBase64 = doodleCanvas.toDataURL('image/png');
+    document.getElementById('post-doodle-preview').src = attachedDoodleBase64;
+    document.getElementById('post-doodle-preview-container').classList.remove('hidden');
+    doodleModal.classList.add('hidden');
+};
+
+document.getElementById('btn-remove-doodle').onclick = () => {
+    attachedDoodleBase64 = null;
+    document.getElementById('post-doodle-preview-container').classList.add('hidden');
+};
+
+// --- POSTS & SMART ALGORITHM FEED LOGIC ---
 let activeProfileUid = null;
 window.showProfile = async (uid) => {
     activeProfileUid = uid;
@@ -420,8 +527,8 @@ window.showProfile = async (uid) => {
         const isFollowing = (userProfile.following || []).includes(uid);
         followBtn.textContent = isFollowing ? "⭐ Following" : "+ Follow";
         followBtn.className = isFollowing 
-            ? "text-sm font-bold px-3 py-1 bg-emerald-500 text-white rounded sketched-border hover:bg-emerald-600 transition-transform" 
-            : "text-sm font-bold px-3 py-1 bg-amber-400 text-amber-950 rounded sketched-border hover:bg-amber-500 transition-transform";
+            ? "text-xs font-bold px-3 py-1 bg-emerald-500 text-white rounded sketched-border hover:bg-emerald-600 transition-transform" 
+            : "text-xs font-bold px-3 py-1 bg-amber-400 text-amber-950 rounded sketched-border hover:bg-amber-500 transition-transform";
         followBtn.onclick = () => toggleFollow(uid);
     }
 
@@ -437,7 +544,6 @@ window.showProfile = async (uid) => {
             
             dmBtn.onclick = () => openDmChat(uid, p.username, p.emoji, p.bio);
 
-            // Fetch Followers Count
             const followersSnap = await getDocs(query(collection(db, "users"), where("following", "array-contains", uid)));
             document.getElementById('p-modal-followers-count').textContent = `${followersSnap.size} Followers`;
         }
@@ -454,6 +560,7 @@ window.deletePost = async (postOwnerUid, postId) => {
     if (confirm("Are you sure you want to delete this post?")) {
         try {
             await deleteDoc(doc(db, `users/${postOwnerUid}/posts/${postId}`));
+            await deleteDoc(doc(db, `global_posts`, postId)).catch(() => {});
         } catch(e) {
             console.error("Delete post error:", e);
             alert("Could not delete post.");
@@ -471,50 +578,78 @@ function loadProfilePosts(uid) {
         const canDeletePosts = uid === currentUser.uid || ['super_admin', 'admin'].includes(userProfile.role);
 
         snapshot.forEach(docSnap => {
-            const post = docSnap.data();
-            const likes = post.likes || []; const dislikes = post.dislikes || [];
-            const hasLiked = likes.includes(currentUser.uid); const hasDisliked = dislikes.includes(currentUser.uid);
-            
-            const div = document.createElement('div');
-            div.className = "bg-white p-3 sketched-border-alt flex flex-col gap-2 relative group";
-            const timeStr = post.createdAt ? post.createdAt.toDate().toLocaleDateString() : '';
-            
-            const deleteBtnHtml = canDeletePosts 
-                ? `<button onclick="deletePost('${uid}', '${docSnap.id}')" class="text-rose-500 hover:text-rose-700 font-bold p-1 hover:scale-110 transition-transform text-sm" title="Delete Post">✖</button>` 
-                : '';
-
-            div.innerHTML = `
-                <div class="flex justify-between items-start gap-2">
-                    <div class="text-lg text-slate-800 break-words flex-1">${parseLinks(escapeHTML(post.text))}</div>
-                    ${deleteBtnHtml}
-                </div>
-                <div class="flex justify-between items-center text-sm border-t border-slate-100 pt-2 mt-1">
-                    <span class="text-slate-400 font-bold">${timeStr}</span>
-                    <div class="flex gap-3">
-                        <button onclick="togglePostVote('${uid}', '${docSnap.id}', 'like')" class="${hasLiked ? 'text-indigo-600 scale-110' : 'text-slate-400'} font-bold hover:scale-110 transition-transform">👍 ${likes.length}</button>
-                        <button onclick="togglePostVote('${uid}', '${docSnap.id}', 'dislike')" class="${hasDisliked ? 'text-rose-600 scale-110' : 'text-slate-400'} font-bold hover:scale-110 transition-transform">👎 ${dislikes.length}</button>
-                    </div>
-                </div>
-            `;
-            listEl.appendChild(div);
+            renderPostCard(docSnap.id, docSnap.data(), uid, listEl, canDeletePosts);
         });
     });
+}
+
+function renderPostCard(postId, post, ownerUid, containerEl, canDelete) {
+    const likes = post.likes || []; const dislikes = post.dislikes || [];
+    const hasLiked = likes.includes(currentUser.uid); const hasDisliked = dislikes.includes(currentUser.uid);
+    
+    const div = document.createElement('div');
+    div.className = "bg-white p-3 sketched-border-alt flex flex-col gap-1.5 relative group shadow-xs";
+    const timeStr = post.createdAt ? post.createdAt.toDate().toLocaleDateString() : '';
+    
+    const deleteBtnHtml = canDelete 
+        ? `<button onclick="deletePost('${ownerUid}', '${postId}')" class="text-rose-500 hover:text-rose-700 font-bold p-1 hover:scale-110 transition-transform text-sm" title="Delete Post">✖</button>` 
+        : '';
+
+    const authorHeader = post.authorName ? `
+        <div class="flex items-center gap-1.5 cursor-pointer hover:opacity-80 pb-1 border-b border-slate-100" onclick="showProfile('${ownerUid}')">
+            <span class="text-lg">${escapeHTML(post.authorEmoji || '👤')}</span>
+            <span class="font-bold text-xs text-indigo-600">${escapeHTML(post.authorName)}</span>
+        </div>` : '';
+
+    const doodleImgHtml = post.doodleImage ? `<div class="mt-1"><img src="${post.doodleImage}" class="max-h-40 rounded sketched-border bg-slate-50 p-1 object-contain" alt="Doodle sketch"></div>` : '';
+
+    div.innerHTML = `
+        ${authorHeader}
+        <div class="flex justify-between items-start gap-2">
+            <div class="text-base text-slate-800 break-words flex-1">${parseLinks(escapeHTML(post.text))}</div>
+            ${deleteBtnHtml}
+        </div>
+        ${doodleImgHtml}
+        <div class="flex justify-between items-center text-xs border-t border-slate-100 pt-1.5 mt-0.5">
+            <span class="text-slate-400 font-bold">${timeStr}</span>
+            <div class="flex gap-3">
+                <button onclick="togglePostVote('${ownerUid}', '${postId}', 'like')" class="${hasLiked ? 'text-indigo-600 scale-110' : 'text-slate-400'} font-bold hover:scale-110 transition-transform">👍 ${likes.length}</button>
+                <button onclick="togglePostVote('${ownerUid}', '${postId}', 'dislike')" class="${hasDisliked ? 'text-rose-600 scale-110' : 'text-slate-400'} font-bold hover:scale-110 transition-transform">👎 ${dislikes.length}</button>
+            </div>
+        </div>
+    `;
+    containerEl.appendChild(div);
 }
 
 document.getElementById('btn-publish-post').onclick = async () => {
     const input = document.getElementById('post-input');
     const txt = input.value.trim();
-    if(!txt) return;
+    if(!txt && !attachedDoodleBase64) return;
+
     try {
-        await addDoc(collection(db, `users/${currentUser.uid}/posts`), {
-            text: txt, createdAt: serverTimestamp(), likes: [], dislikes: []
-        });
+        const postData = {
+            text: txt || '',
+            doodleImage: attachedDoodleBase64 || null,
+            createdAt: serverTimestamp(),
+            likes: [],
+            dislikes: [],
+            authorId: currentUser.uid,
+            authorName: userProfile.username,
+            authorEmoji: userProfile.emoji || '👤'
+        };
+
+        const docRef = await addDoc(collection(db, `users/${currentUser.uid}/posts`), postData);
+        await setDoc(doc(db, `global_posts`, docRef.id), postData);
+
         input.value = '';
+        attachedDoodleBase64 = null;
+        document.getElementById('post-doodle-preview-container').classList.add('hidden');
     } catch(e) { console.error("Post error:", e); }
 };
 
 window.togglePostVote = async (postOwnerUid, postId, type) => {
     const postRef = doc(db, `users/${postOwnerUid}/posts`, postId);
+    const globalRef = doc(db, `global_posts`, postId);
     const snap = await getDoc(postRef);
     if(!snap.exists()) return;
     const data = snap.data();
@@ -530,7 +665,122 @@ window.togglePostVote = async (postOwnerUid, postId, type) => {
         else { updates.dislikes = arrayUnion(uid); updates.likes = arrayRemove(uid); }
     }
     await updateDoc(postRef, updates);
+    await updateDoc(globalRef, updates).catch(() => {});
 };
+
+// --- GLOBAL FEED RANKING ALGORITHM ---
+function loadGlobalFeed() {
+    if (unsubFeed) unsubFeed();
+    const container = document.getElementById('global-feed-list');
+    container.innerHTML = '<div class="text-center italic text-slate-500 mt-6">Ranking global notebook feed...</div>';
+
+    unsubFeed = onSnapshot(collection(db, "global_posts"), (snapshot) => {
+        container.innerHTML = '';
+        if (snapshot.empty) {
+            container.innerHTML = '<div class="text-center italic text-slate-500 mt-6">No public posts in the global feed yet.</div>';
+            return;
+        }
+
+        let posts = [];
+        const now = Date.now();
+
+        snapshot.forEach(docSnap => {
+            const p = docSnap.data();
+            const likesCount = (p.likes || []).length;
+            const dislikesCount = (p.dislikes || []).length;
+            const timestamp = p.createdAt ? p.createdAt.toDate().getTime() : now;
+            
+            const ageHours = (now - timestamp) / (1000 * 60 * 60);
+            const recencyScore = Math.max(0, 100 - (ageHours * 2));
+            const engagementScore = (likesCount * 10) - (dislikesCount * 5);
+            const socialBoost = (userProfile.following || []).includes(p.authorId) ? 50 : 0;
+
+            const totalScore = recencyScore + engagementScore + socialBoost;
+
+            posts.push({ id: docSnap.id, ...p, score: totalScore });
+        });
+
+        posts.sort((a, b) => b.score - a.score);
+
+        posts.forEach(post => {
+            const canDelete = post.authorId === currentUser.uid || ['super_admin', 'admin'].includes(userProfile.role);
+            renderPostCard(post.id, post, post.authorId, container, canDelete);
+        });
+    });
+}
+
+// --- ARCADE & PUZZLES LOGIC ---
+const puzzleModal = document.getElementById('puzzle-modal');
+document.getElementById('btn-open-puzzle-creator').onclick = () => puzzleModal.classList.remove('hidden');
+document.getElementById('puzzle-close').onclick = () => puzzleModal.classList.add('hidden');
+
+document.getElementById('btn-save-puzzle').onclick = async () => {
+    if (userProfile.role !== 'super_admin' && userProfile.role !== 'admin') return alert("Admin privilege required.");
+    const title = document.getElementById('puzzle-title-input').value.trim();
+    const code = document.getElementById('puzzle-code-input').value.trim();
+    if (!title || !code) return alert("Please enter both title and code snippet.");
+
+    try {
+        await addDoc(collection(db, "puzzles"), {
+            title: title,
+            code: code,
+            authorName: userProfile.username,
+            createdAt: serverTimestamp()
+        });
+        document.getElementById('puzzle-title-input').value = '';
+        document.getElementById('puzzle-code-input').value = '';
+        puzzleModal.classList.add('hidden');
+        loadArcadePuzzles();
+    } catch(e) { console.error("Puzzle publish error:", e); }
+};
+
+function loadArcadePuzzles() {
+    if (unsubPuzzles) unsubPuzzles();
+    const arcadeList = document.getElementById('arcade-list');
+    arcadeList.innerHTML = '<div class="text-center italic text-slate-500">Loading arcade games...</div>';
+
+    unsubPuzzles = onSnapshot(query(collection(db, "puzzles"), orderBy("createdAt", "desc")), (snapshot) => {
+        arcadeList.innerHTML = '';
+        if (snapshot.empty) {
+            arcadeList.innerHTML = '<div class="text-center italic text-slate-500 col-span-2">No puzzles or game snippets published yet.</div>';
+            return;
+        }
+
+        let first = true;
+        snapshot.forEach(docSnap => {
+            const puzzle = docSnap.data();
+            const div = document.createElement('div');
+            div.className = "bg-white p-3 sketched-border flex flex-col gap-2 cursor-pointer hover:bg-amber-50 transition-colors shadow-xs";
+            div.innerHTML = `
+                <div class="font-bold text-lg text-indigo-700">${escapeHTML(puzzle.title)}</div>
+                <div class="text-xs text-slate-500 italic">By @${escapeHTML(puzzle.authorName || 'admin')}</div>
+                <button class="mt-1 bg-emerald-500 text-white font-bold py-1 px-2 rounded sketched-border-alt text-sm hover:bg-emerald-600">Play / Run ➔</button>
+            `;
+            div.onclick = () => runPuzzleSnippet(puzzle.title, puzzle.code);
+            arcadeList.appendChild(div);
+
+            if (first) {
+                runPuzzleSnippet(puzzle.title, puzzle.code);
+                first = false;
+            }
+        });
+    });
+}
+
+function runPuzzleSnippet(title, htmlCode) {
+    const container = document.getElementById('arcade-active-container');
+    container.innerHTML = `
+        <div class="flex justify-between items-center border-b pb-2">
+            <span class="font-['Permanent_Marker'] text-2xl text-amber-900">🕹️ ${escapeHTML(title)}</span>
+            <span class="text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded sketched-border-alt font-bold">Sandboxed Live Runner</span>
+        </div>
+        <div class="flex-1 w-full h-[450px] bg-slate-900 rounded sketched-border overflow-hidden relative">
+            <iframe id="puzzle-sandbox" class="w-full h-full border-0 bg-white" sandbox="allow-scripts allow-modals"></iframe>
+        </div>
+    `;
+    const iframe = document.getElementById('puzzle-sandbox');
+    iframe.srcdoc = htmlCode;
+}
 
 // --- DIRECT MESSAGING LOGIC ---
 let activeDmId = null;
