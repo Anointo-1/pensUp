@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-<head> 
+<head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title id="page-title">PensUp pro — Handwritten Notebook & Study Group</title>
@@ -24,26 +24,25 @@
     <meta id="tw-description" name="twitter:description" content="A handwritten calm notebook-style real-time study group application.">
     <meta name="twitter:image" content="https://anointo-1.github.io/pensUp/PensUp.jpg">
 
-<!-- Structured Data (JSON-LD) for Search Engines -->
-<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "DiscussionForumPosting",
-  "headline": "PensUp Pro Notebook Study Group",
-  "datePublished": "2026-02-01",
-  "text": "A handwritten notebook-style real-time study group, chat, and interactive arcade application created by Anointo.",
-  "url": "https://anointo-1.github.io/pensUp/",
-  "author": { 
-    "@type": "Person", 
-    "name": "Anointo" 
-  },
-  "publisher": { 
-    "@type": "Organization", 
-    "name": "PensUp Team" 
-  }
-}
-</script>
-
+    <!-- Structured Data (JSON-LD) for Search Engines -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "DiscussionForumPosting",
+      "headline": "PensUp Pro Notebook Study Group",
+      "datePublished": "2026-02-01",
+      "text": "A handwritten notebook-style real-time study group, chat, and interactive arcade application created by Anointo.",
+      "url": "https://anointo-1.github.io/pensUp/",
+      "author": { 
+        "@type": "Person", 
+        "name": "Anointo" 
+      },
+      "publisher": { 
+        "@type": "Organization", 
+        "name": "PensUp Team" 
+      }
+    }
+    </script>
 
     <!-- Styles & Fonts -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -126,9 +125,9 @@
 
     <!-- MAIN CHAT & APP VIEWS -->
     <div id="app-screen" class="hidden flex-col h-full w-full">
-        <!-- Top Header (Horizontal Single Row) -->
+        <!-- Top Header -->
         <header class="w-full pt-4 pb-2 px-4 flex items-center justify-between z-20 paper-mask border-b-2 border-slate-700/20 shrink-0 h-16">
-            <div class="flex items-center gap-2 pl-16 sm:pl-24 shrink-0">
+            <div class="flex items-center gap-2 pl-8 sm:pl-10 shrink-0">
                 <button id="btn-back-launch" class="text-2xl hover:scale-110" title="Home">🏠</button>
                 <h1 class="font-['Permanent_Marker'] text-2xl ml-1 hidden sm:inline">PensUp pro</h1>
             </div>
@@ -140,8 +139,8 @@
             </div>
         </header>
 
-        <!-- VIEW CONTAINER (Safely clear of the red margins) -->
-        <div class="flex-1 relative overflow-hidden flex flex-col z-10 pl-20 sm:pl-28">
+        <!-- VIEW CONTAINER -->
+        <div class="flex-1 relative overflow-hidden flex flex-col z-10 pl-4 sm:pl-6 pr-4">
 
             <!-- VIEW 1: CHAT -->
             <div id="view-chat" class="absolute inset-0 flex flex-col">
@@ -162,11 +161,15 @@
             </div>
 
             <!-- VIEW 2: GLOBAL FEED -->
-            <div id="view-feed" class="hidden absolute inset-0 flex flex-col p-4 overflow-y-auto pr-8">
+            <div id="view-feed" class="hidden absolute inset-0 flex flex-col p-4 overflow-y-auto pr-6">
                 <div class="max-w-2xl w-full mx-auto flex flex-col gap-4 pb-16">
                     <div class="bg-indigo-50 p-4 sketched-border flex flex-col gap-2">
                         <h2 class="font-['Permanent_Marker'] text-2xl text-indigo-700">🌎 Global Notebook Feed</h2>
                         <p class="text-sm text-slate-600">Showing top public notes ranked by recency, upvotes, and accounts you follow!</p>
+                        <!-- NEW FEATURE: Feed Search Bar -->
+                        <div class="mt-1 relative">
+                            <input type="text" id="feed-search-input" placeholder="🔍 Search topics or notes..." class="w-full bg-white p-2 sketched-border text-base outline-none">
+                        </div>
                     </div>
                     <div id="global-feed-list" class="flex flex-col gap-4">
                         <div class="text-center italic text-slate-500 mt-6">Loading global feed...</div>
@@ -175,7 +178,7 @@
             </div>
 
             <!-- VIEW 3: ARCADE / PUZZLES -->
-            <div id="view-arcade" class="hidden absolute inset-0 flex flex-col p-4 overflow-y-auto pr-8">
+            <div id="view-arcade" class="hidden absolute inset-0 flex flex-col p-4 overflow-y-auto pr-6">
                 <div class="max-w-3xl w-full mx-auto flex flex-col gap-4 pb-16">
                     <div class="bg-amber-50 p-4 sketched-border flex justify-between items-center flex-wrap gap-3">
                         <div>
@@ -193,7 +196,7 @@
             </div>
 
             <!-- VIEW 4: STICKY NOTE BULLETIN BOARD -->
-            <div id="view-sticky" class="hidden absolute inset-0 flex flex-col p-4 overflow-y-auto pr-8">
+            <div id="view-sticky" class="hidden absolute inset-0 flex flex-col p-4 overflow-y-auto pr-6">
                 <div class="max-w-4xl w-full mx-auto flex flex-col gap-4 pb-16">
                     <div class="bg-yellow-100 p-4 sketched-border flex justify-between items-center flex-wrap gap-3">
                         <div>
@@ -222,19 +225,19 @@
 
         </div>
 
-        <!-- FOOTER: Input Box & Strictly Horizontal Tab Strip -->
-        <footer id="chat-footer" class="p-3 pb-5 paper-mask border-t-2 border-slate-700/20 shrink-0 z-20 pl-20 sm:pl-28 transition-all duration-300 flex flex-col gap-2">
-            <div class="flex items-end gap-2 max-w-3xl mx-auto pr-4 w-full">
+        <!-- FOOTER: Restored Navigation Bar -->
+        <footer id="chat-footer" class="p-3 pb-5 paper-mask border-t-2 border-slate-700/20 shrink-0 z-20 transition-all duration-300 flex flex-col gap-2">
+            <div class="flex items-end gap-2 max-w-3xl mx-auto w-full px-2">
                 <textarea id="message-input" rows="1" placeholder="Scribble a note..." class="flex-1 bg-white/90 sketched-border px-3 py-2 focus:outline-none resize-none text-xl text-slate-800" style="min-height: 48px; max-height: 120px;"></textarea>
                 <button id="btn-send" class="p-2 bg-indigo-500 text-white sketched-border-alt shrink-0 text-xl disabled:opacity-50" disabled>➤</button>
             </div>
-            <!-- Single-Row Horizontal Tab Strip -->
-            <div class="flex justify-center items-center max-w-3xl mx-auto w-full pr-4 pt-1 overflow-x-auto">
-                <div class="flex gap-1 bg-yellow-100/90 p-1 sketched-border-alt shrink-0 flex-nowrap whitespace-nowrap">
-                    <button id="nav-tab-chat" class="px-2.5 py-1 font-bold text-xs sm:text-sm bg-indigo-500 text-white rounded sketched-border transition-colors">💬 Chat</button>
-                    <button id="nav-tab-feed" class="px-2.5 py-1 font-bold text-xs sm:text-sm bg-white text-slate-700 rounded sketched-border hover:bg-yellow-200 transition-colors">🌎 Feed</button>
-                    <button id="nav-tab-arcade" class="px-2.5 py-1 font-bold text-xs sm:text-sm bg-white text-slate-700 rounded sketched-border hover:bg-yellow-200 transition-colors">🧩 Arcade</button>
-                    <button id="nav-tab-sticky" class="px-2.5 py-1 font-bold text-xs sm:text-sm bg-white text-slate-700 rounded sketched-border hover:bg-yellow-200 transition-colors">📌 Sticky Board</button>
+            <!-- Horizontal Scrollable Navigation Bar -->
+            <div class="w-full flex justify-center items-center pt-1 overflow-x-auto">
+                <div class="flex gap-1.5 bg-yellow-100/90 p-1.5 sketched-border-alt shrink-0 flex-nowrap whitespace-nowrap">
+                    <button id="nav-tab-chat" class="px-3 py-1 font-bold text-sm bg-indigo-500 text-white rounded sketched-border transition-colors">💬 Chat</button>
+                    <button id="nav-tab-feed" class="px-3 py-1 font-bold text-sm bg-white text-slate-700 rounded sketched-border hover:bg-yellow-200 transition-colors">🌎 Feed</button>
+                    <button id="nav-tab-arcade" class="px-3 py-1 font-bold text-sm bg-white text-slate-700 rounded sketched-border hover:bg-yellow-200 transition-colors">🧩 Arcade</button>
+                    <button id="nav-tab-sticky" class="px-3 py-1 font-bold text-sm bg-white text-slate-700 rounded sketched-border hover:bg-yellow-200 transition-colors">📌 Sticky Board</button>
                 </div>
             </div>
         </footer>

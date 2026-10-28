@@ -20,6 +20,7 @@ let currentPinnedCount = 0;
 let linksEnabledGlobally = true;
 let attachedDoodleBase64 = null;
 let currentStickyColor = 'yellow';
+let globalPostsCache = [];
 
 const ROOM_ID = "main-room";
 const SUPER_ADMINS = ['anoimazo1', 'anointo', 'amazo'];
@@ -61,7 +62,7 @@ function updateSEO({ title, description, image, url }) {
     }
 }
 
-// --- DYNAMIC ROUTER FOR DEEP LINKS & GOOGLE INDEXING ---
+// --- DYNAMIC ROUTER & DEEP LINK SCROLLER ---
 async function handleUrlRouting() {
     const params = new URLSearchParams(window.location.search);
     const postId = params.get('post');
@@ -78,12 +79,12 @@ async function handleUrlRouting() {
                     image: data.doodleImage || "https://anointo-1.github.io/pensUp/PensUp.jpg"
                 });
                 switchView('feed');
-                loadGlobalFeed();
+                loadGlobalFeed(postId);
             }
         } catch (e) { console.warn("Router post fetch error:", e); }
     } else if (puzzleId) {
         try {
-            const puzzleSnap = await getDoc(doc(doc(db, "puzzles", puzzleId)));
+            const puzzleSnap = await getDoc(doc(db, "puzzles", puzzleId));
             if (puzzleSnap.exists()) {
                 const data = puzzleSnap.data();
                 updateSEO({
@@ -317,23 +318,23 @@ tabSticky.onclick = () => { switchView('sticky'); loadStickyNotes(); };
 
 function switchView(v) {
     viewChat.classList.add('hidden'); viewFeed.classList.add('hidden'); viewArcade.classList.add('hidden'); viewSticky.classList.add('hidden');
-    tabChat.className = tabFeed.className = tabArcade.className = tabSticky.className = "px-2.5 py-1 font-bold text-xs sm:text-sm bg-white text-slate-700 rounded sketched-border hover:bg-yellow-200 transition-colors";
+    tabChat.className = tabFeed.className = tabArcade.className = tabSticky.className = "px-3 py-1 font-bold text-sm bg-white text-slate-700 rounded sketched-border hover:bg-yellow-200 transition-colors";
     
     if (v === 'chat') {
         viewChat.classList.remove('hidden');
-        tabChat.className = "px-2.5 py-1 font-bold text-xs sm:text-sm bg-indigo-500 text-white rounded sketched-border transition-colors";
+        tabChat.className = "px-3 py-1 font-bold text-sm bg-indigo-500 text-white rounded sketched-border transition-colors";
         updateSEO({ title: "Main Chat Room", description: "Real-time handwritten chat and study group notes on PensUp Pro." });
     } else if (v === 'feed') {
         viewFeed.classList.remove('hidden');
-        tabFeed.className = "px-2.5 py-1 font-bold text-xs sm:text-sm bg-indigo-500 text-white rounded sketched-border transition-colors";
+        tabFeed.className = "px-3 py-1 font-bold text-sm bg-indigo-500 text-white rounded sketched-border transition-colors";
         updateSEO({ title: "Global Feed", description: "Browse trending study discussions, math problems, and public posts." });
     } else if (v === 'arcade') {
         viewArcade.classList.remove('hidden');
-        tabArcade.className = "px-2.5 py-1 font-bold text-xs sm:text-sm bg-indigo-500 text-white rounded sketched-border transition-colors";
+        tabArcade.className = "px-3 py-1 font-bold text-sm bg-indigo-500 text-white rounded sketched-border transition-colors";
         updateSEO({ title: "Arcade Games & Code Snippets", description: "Play custom games and run code snippets published by the community." });
     } else if (v === 'sticky') {
         viewSticky.classList.remove('hidden');
-        tabSticky.className = "px-2.5 py-1 font-bold text-xs sm:text-sm bg-indigo-500 text-white rounded sketched-border transition-colors";
+        tabSticky.className = "px-3 py-1 font-bold text-sm bg-indigo-500 text-white rounded sketched-border transition-colors";
         updateSEO({ title: "Sticky Board", description: "Shared sticky note wall for quick community messages and study thoughts." });
     }
 }
@@ -486,8 +487,12 @@ function renderMessage(id, data, containerEl, roomStr) {
     const pinnedBadge = data.isPinned ? `<span class="text-xs bg-amber-200 text-amber-900 font-bold px-1.5 py-0.5 rounded sketched-border-alt mb-1 inline-block">📌 Pinned</span>` : '';
     const header = (!isSelf && roomStr === ROOM_ID) ? `<div class="flex items-center gap-1 mb-1 cursor-pointer hover:opacity-80" onclick="showProfile('${data.senderId}')"><span class="text-2xl">${escapeHTML(data.senderEmoji || '👤')}</span><span class="text-sm font-bold text-indigo-500 pl-1">${escapeHTML(data.senderName)}</span></div>` : '';
 
+    // INDENT INCOMING MESSAGES SO THEY DON'T BLOCK THE RED MARGINS
+    const marginIndentClass = !isSelf ? 'ml-10 sm:ml-12' : '';
+
     const wrapper = document.createElement('div');
-    wrapper.id = `msg-${id}`; wrapper.className = `group flex flex-col gap-1 max-w-[85%] animate-pop relative transition-all duration-300 ${isSelf ? 'self-end items-end' : 'self-start items-start'}`;
+    wrapper.id = `msg-${id}`; 
+    wrapper.className = `group flex flex-col gap-1 max-w-[85%] animate-pop relative transition-all duration-300 ${isSelf ? 'self-end items-end' : 'self-start items-start ' + marginIndentClass}`;
     wrapper.innerHTML = `${header}${pinnedBadge}<div class="${bgClass} text-slate-800 p-2.5 text-2xl sketched-border relative break-words shadow-xs">${displayHtml} ${actionControls}</div><span class="text-xs font-bold opacity-60 px-1 mt-0.5">${timeStr}</span>`;
     containerEl.appendChild(wrapper);
 }
@@ -659,7 +664,8 @@ function renderPostCard(postId, post, ownerUid, containerEl, canDelete) {
     const hasLiked = likes.includes(currentUser.uid); const hasDisliked = dislikes.includes(currentUser.uid);
     
     const div = document.createElement('div');
-    div.className = "bg-white p-3 sketched-border-alt flex flex-col gap-1.5 relative group shadow-xs";
+    div.id = `post-${postId}`;
+    div.className = "bg-white p-3 sketched-border-alt flex flex-col gap-1.5 relative group shadow-xs transition-all duration-500";
     const timeStr = post.createdAt ? post.createdAt.toDate().toLocaleDateString() : '';
     
     const deleteBtnHtml = canDelete 
@@ -741,8 +747,8 @@ window.togglePostVote = async (postOwnerUid, postId, type) => {
     await updateDoc(globalRef, updates).catch(() => {});
 };
 
-// --- GLOBAL FEED RANKING ALGORITHM ---
-function loadGlobalFeed() {
+// --- GLOBAL FEED RANKING ALGORITHM & REAL-TIME SEARCH ---
+function loadGlobalFeed(scrollToPostId = null) {
     if (unsubFeed) unsubFeed();
     const container = document.getElementById('global-feed-list');
     container.innerHTML = '<div class="text-center italic text-slate-500 mt-6">Ranking global notebook feed...</div>';
@@ -754,7 +760,7 @@ function loadGlobalFeed() {
             return;
         }
 
-        let posts = [];
+        globalPostsCache = [];
         const now = Date.now();
 
         snapshot.forEach(docSnap => {
@@ -770,23 +776,55 @@ function loadGlobalFeed() {
 
             const totalScore = recencyScore + engagementScore + socialBoost;
 
-            posts.push({ id: docSnap.id, ...p, score: totalScore });
+            globalPostsCache.push({ id: docSnap.id, ...p, score: totalScore });
         });
 
-        posts.sort((a, b) => b.score - a.score);
+        globalPostsCache.sort((a, b) => b.score - a.score);
 
-        if (posts.length > 0) {
-            updateSEO({
-                title: `Trending: ${posts[0].text.substring(0, 30)}...`,
-                description: `Join the discussion on PensUp Pro: "${posts[0].text}"`
-            });
+        renderFeedList(globalPostsCache, container);
+
+        // SMART DEEP LINK SCROLLER
+        if (scrollToPostId) {
+            setTimeout(() => {
+                const targetEl = document.getElementById(`post-${scrollToPostId}`);
+                if (targetEl) {
+                    targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    targetEl.classList.add('ring-4', 'ring-amber-400');
+                    setTimeout(() => targetEl.classList.remove('ring-4', 'ring-amber-400'), 3000);
+                }
+            }, 300);
         }
-
-        posts.forEach(post => {
-            const canDelete = post.authorId === currentUser.uid || ['super_admin', 'admin'].includes(userProfile.role);
-            renderPostCard(post.id, post, post.authorId, container, canDelete);
-        });
     });
+}
+
+function renderFeedList(posts, containerEl) {
+    containerEl.innerHTML = '';
+    if (posts.length === 0) {
+        containerEl.innerHTML = '<div class="text-center italic text-slate-500 mt-6">No matching posts found.</div>';
+        return;
+    }
+    posts.forEach(post => {
+        const canDelete = post.authorId === currentUser.uid || ['super_admin', 'admin'].includes(userProfile.role);
+        renderPostCard(post.id, post, post.authorId, containerEl, canDelete);
+    });
+}
+
+// REAL-TIME FEED SEARCH FILTER
+const feedSearchInput = document.getElementById('feed-search-input');
+if (feedSearchInput) {
+    feedSearchInput.oninput = (e) => {
+        const q = e.target.value.trim().toLowerCase();
+        const container = document.getElementById('global-feed-list');
+        if (!q) {
+            renderFeedList(globalPostsCache, container);
+            return;
+        }
+        const filtered = globalPostsCache.filter(p => 
+            (p.text && p.text.toLowerCase().includes(q)) || 
+            (p.authorName && p.authorName.toLowerCase().includes(q))
+        );
+        renderFeedList(filtered, container);
+    };
 }
 
 // --- STICKY NOTE BULLETIN BOARD LOGIC ---
@@ -1144,7 +1182,7 @@ UI.adminBtn.onclick = async () => {
                     <span class="font-bold">${escapeHTML(u.emoji||'👤')} ${escapeHTML(u.username)} ${u.suspended ? '<b class="text-rose-500">(Banned)</b>' : ''}</span>
                     <div class="flex gap-1 text-sm font-bold">
                         ${!isTargetSuper ? `<button onclick="toggleSuspend('${docSnap.id}',${!u.suspended})" class="bg-amber-400 text-white px-2 py-1 sketched-border hover:bg-amber-500">${u.suspended ? 'Unban' : 'Ban'}</button>` : ''}
-                        ${(iAmSuper && !isTargetSuper) ? `<button onclick="toggleRole('${docSnap.id}', '${u.role === 'admin' ? 'user' : 'admin'}')" class="bg-indigo-400 text-white px-2 py-1 sketched-border hover:bg-indigo-500">${u.role === 'admin' ? 'Demote' : 'Make Admin'}</button>` : ''}
+                        ${(iAmSuper && !isTargetSuper) ? `<button onclick="toggleRole('${docSnap.id}', '${u.role === 'admin' ? 'user' : 'admin'}' )" class="bg-indigo-400 text-white px-2 py-1 sketched-border hover:bg-indigo-500">${u.role === 'admin' ? 'Demote' : 'Make Admin'}</button>` : ''}
                     </div>
                 </div>`;
             list.appendChild(div);
