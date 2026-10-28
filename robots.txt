@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://anointo-1.github.io/pensUp/sitemap.xml

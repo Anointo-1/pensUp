@@ -14,11 +14,12 @@ const db = getFirestore(app);
 setPersistence(auth, browserLocalPersistence).catch((err) => console.warn("Auth persistence error:", err));
 
 let currentUser = null, userProfile = null;
-let userDocUnsub = null, unsubMsg = null, unsubDmMsg = null, unsubProfilePosts = null, unsubNotifs = null, unsubFeed = null, unsubPuzzles = null;
+let userDocUnsub = null, unsubMsg = null, unsubDmMsg = null, unsubProfilePosts = null, unsubNotifs = null, unsubFeed = null, unsubPuzzles = null, unsubSticky = null;
 let isRegistering = false, isInitialLoadDone = false; 
 let currentPinnedCount = 0;
 let linksEnabledGlobally = true;
 let attachedDoodleBase64 = null;
+let currentStickyColor = 'yellow';
 
 const ROOM_ID = "main-room";
 const SUPER_ADMINS = ['anoimazo1', 'anointo', 'amazo'];
@@ -41,6 +42,60 @@ let settings = {
     soundEnabled: localStorage.getItem('pensup_sound') !== 'false',
     fullScreen: localStorage.getItem('pensup_fullscreen') === 'true'
 };
+
+// --- DYNAMIC SEO META TAG INJECTOR ---
+function updateSEO({ title, description, image, url }) {
+    if (title) {
+        document.title = `${title} | PensUp Pro`;
+        document.getElementById('og-title')?.setAttribute('content', title);
+        document.getElementById('tw-title')?.setAttribute('content', title);
+    }
+    if (description) {
+        const cleanDesc = description.substring(0, 160);
+        document.getElementById('meta-description')?.setAttribute('content', cleanDesc);
+        document.getElementById('og-description')?.setAttribute('content', cleanDesc);
+        document.getElementById('tw-description')?.setAttribute('content', cleanDesc);
+    }
+    if (image) {
+        document.getElementById('og-image')?.setAttribute('content', image);
+    }
+}
+
+// --- DYNAMIC ROUTER FOR DEEP LINKS & GOOGLE INDEXING ---
+async function handleUrlRouting() {
+    const params = new URLSearchParams(window.location.search);
+    const postId = params.get('post');
+    const puzzleId = params.get('puzzle');
+
+    if (postId) {
+        try {
+            const postSnap = await getDoc(doc(db, "global_posts", postId));
+            if (postSnap.exists()) {
+                const data = postSnap.data();
+                updateSEO({
+                    title: `Discussion by @${data.authorName}: "${data.text.substring(0, 30)}..."`,
+                    description: data.text || "Check out this handwritten note on PensUp Pro!",
+                    image: data.doodleImage || "https://anointo-1.github.io/pensUp/PensUp.jpg"
+                });
+                switchView('feed');
+                loadGlobalFeed();
+            }
+        } catch (e) { console.warn("Router post fetch error:", e); }
+    } else if (puzzleId) {
+        try {
+            const puzzleSnap = await getDoc(doc(doc(db, "puzzles", puzzleId)));
+            if (puzzleSnap.exists()) {
+                const data = puzzleSnap.data();
+                updateSEO({
+                    title: `Play Arcade Game: ${data.title}`,
+                    description: `Play and run ${data.title} inside the PensUp Arcade!`
+                });
+                switchView('arcade');
+                runPuzzleSnippet(data.title, data.code);
+            }
+        } catch (e) { console.warn("Router puzzle fetch error:", e); }
+    }
+}
 
 function applySettings() {
     settings.chatBoxLift ? UI.footer.classList.add('mb-12') : UI.footer.classList.remove('mb-12');
@@ -220,6 +275,7 @@ function syncUserProfile(user) {
             if (userProfile.role === 'super_admin') document.getElementById('btn-edit-board').classList.remove('hidden');
             
             listenForNotifications(user.uid);
+            handleUrlRouting();
 
             onSnapshot(doc(db, "app_settings", "launch_screen"), (d) => { document.getElementById('launch-board-text').textContent = d.exists() ? d.data().text : "Welcome to the study group!"; });
             onSnapshot(doc(db, "app_settings", "global_settings"), (d) => { 
@@ -244,31 +300,41 @@ onAuthStateChanged(auth, (user) => {
     }
 });
 
-// Navigation Tab Switcher (Bottom Strip)
+// Navigation Tab Switcher
 const tabChat = document.getElementById('nav-tab-chat');
 const tabFeed = document.getElementById('nav-tab-feed');
 const tabArcade = document.getElementById('nav-tab-arcade');
+const tabSticky = document.getElementById('nav-tab-sticky');
 const viewChat = document.getElementById('view-chat');
 const viewFeed = document.getElementById('view-feed');
 const viewArcade = document.getElementById('view-arcade');
+const viewSticky = document.getElementById('view-sticky');
 
 tabChat.onclick = () => switchView('chat');
 tabFeed.onclick = () => { switchView('feed'); loadGlobalFeed(); };
 tabArcade.onclick = () => { switchView('arcade'); loadArcadePuzzles(); };
+tabSticky.onclick = () => { switchView('sticky'); loadStickyNotes(); };
 
 function switchView(v) {
-    viewChat.classList.add('hidden'); viewFeed.classList.add('hidden'); viewArcade.classList.add('hidden');
-    tabChat.className = tabFeed.className = tabArcade.className = "px-3 py-1 font-bold text-sm bg-white text-slate-700 rounded sketched-border hover:bg-yellow-200 transition-colors";
+    viewChat.classList.add('hidden'); viewFeed.classList.add('hidden'); viewArcade.classList.add('hidden'); viewSticky.classList.add('hidden');
+    tabChat.className = tabFeed.className = tabArcade.className = tabSticky.className = "px-2.5 py-1 font-bold text-xs sm:text-sm bg-white text-slate-700 rounded sketched-border hover:bg-yellow-200 transition-colors";
     
     if (v === 'chat') {
         viewChat.classList.remove('hidden');
-        tabChat.className = "px-3 py-1 font-bold text-sm bg-indigo-500 text-white rounded sketched-border transition-colors";
+        tabChat.className = "px-2.5 py-1 font-bold text-xs sm:text-sm bg-indigo-500 text-white rounded sketched-border transition-colors";
+        updateSEO({ title: "Main Chat Room", description: "Real-time handwritten chat and study group notes on PensUp Pro." });
     } else if (v === 'feed') {
         viewFeed.classList.remove('hidden');
-        tabFeed.className = "px-3 py-1 font-bold text-sm bg-indigo-500 text-white rounded sketched-border transition-colors";
+        tabFeed.className = "px-2.5 py-1 font-bold text-xs sm:text-sm bg-indigo-500 text-white rounded sketched-border transition-colors";
+        updateSEO({ title: "Global Feed", description: "Browse trending study discussions, math problems, and public posts." });
     } else if (v === 'arcade') {
         viewArcade.classList.remove('hidden');
-        tabArcade.className = "px-3 py-1 font-bold text-sm bg-indigo-500 text-white rounded sketched-border transition-colors";
+        tabArcade.className = "px-2.5 py-1 font-bold text-xs sm:text-sm bg-indigo-500 text-white rounded sketched-border transition-colors";
+        updateSEO({ title: "Arcade Games & Code Snippets", description: "Play custom games and run code snippets published by the community." });
+    } else if (v === 'sticky') {
+        viewSticky.classList.remove('hidden');
+        tabSticky.className = "px-2.5 py-1 font-bold text-xs sm:text-sm bg-indigo-500 text-white rounded sketched-border transition-colors";
+        updateSEO({ title: "Sticky Board", description: "Shared sticky note wall for quick community messages and study thoughts." });
     }
 }
 
@@ -469,7 +535,12 @@ const getPos = (e) => {
     const rect = doodleCanvas.getBoundingClientRect();
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    return { x: clientX - rect.left, y: clientY - rect.top };
+    const scaleX = doodleCanvas.width / rect.width;
+    const scaleY = doodleCanvas.height / rect.height;
+    return { 
+        x: (clientX - rect.left) * scaleX, 
+        y: (clientY - rect.top) * scaleY 
+    };
 };
 
 doodleCanvas.onmousedown = doodleCanvas.ontouchstart = (e) => {
@@ -603,6 +674,8 @@ function renderPostCard(postId, post, ownerUid, containerEl, canDelete) {
 
     const doodleImgHtml = post.doodleImage ? `<div class="mt-1"><img src="${post.doodleImage}" class="max-h-40 rounded sketched-border bg-slate-50 p-1 object-contain" alt="Doodle sketch"></div>` : '';
 
+    const shareUrl = `${window.location.origin}${window.location.pathname}?post=${postId}`;
+
     div.innerHTML = `
         ${authorHeader}
         <div class="flex justify-between items-start gap-2">
@@ -611,7 +684,7 @@ function renderPostCard(postId, post, ownerUid, containerEl, canDelete) {
         </div>
         ${doodleImgHtml}
         <div class="flex justify-between items-center text-xs border-t border-slate-100 pt-1.5 mt-0.5">
-            <span class="text-slate-400 font-bold">${timeStr}</span>
+            <span class="text-slate-400 font-bold cursor-pointer hover:underline" onclick="navigator.clipboard.writeText('${shareUrl}'); alert('Direct post link copied for sharing!');">${timeStr} 🔗 Share</span>
             <div class="flex gap-3">
                 <button onclick="togglePostVote('${ownerUid}', '${postId}', 'like')" class="${hasLiked ? 'text-indigo-600 scale-110' : 'text-slate-400'} font-bold hover:scale-110 transition-transform">👍 ${likes.length}</button>
                 <button onclick="togglePostVote('${ownerUid}', '${postId}', 'dislike')" class="${hasDisliked ? 'text-rose-600 scale-110' : 'text-slate-400'} font-bold hover:scale-110 transition-transform">👎 ${dislikes.length}</button>
@@ -702,12 +775,98 @@ function loadGlobalFeed() {
 
         posts.sort((a, b) => b.score - a.score);
 
+        if (posts.length > 0) {
+            updateSEO({
+                title: `Trending: ${posts[0].text.substring(0, 30)}...`,
+                description: `Join the discussion on PensUp Pro: "${posts[0].text}"`
+            });
+        }
+
         posts.forEach(post => {
             const canDelete = post.authorId === currentUser.uid || ['super_admin', 'admin'].includes(userProfile.role);
             renderPostCard(post.id, post, post.authorId, container, canDelete);
         });
     });
 }
+
+// --- STICKY NOTE BULLETIN BOARD LOGIC ---
+window.setStickyColor = (color) => {
+    currentStickyColor = color;
+    ['yellow', 'pink', 'blue', 'green'].forEach(c => {
+        const btn = document.getElementById(`color-btn-${c}`);
+        if(btn) btn.classList.remove('ring-2', 'ring-indigo-500');
+    });
+    const activeBtn = document.getElementById(`color-btn-${color}`);
+    if(activeBtn) activeBtn.classList.add('ring-2', 'ring-indigo-500');
+};
+
+document.getElementById('btn-publish-sticky').onclick = async () => {
+    const input = document.getElementById('sticky-input');
+    const txt = input.value.trim();
+    if(!txt) return;
+
+    try {
+        await addDoc(collection(db, "sticky_board"), {
+            text: txt,
+            color: currentStickyColor,
+            authorName: userProfile.username,
+            authorEmoji: userProfile.emoji || '👤',
+            authorId: currentUser.uid,
+            createdAt: serverTimestamp()
+        });
+        input.value = '';
+    } catch(e) { console.error("Sticky note error:", e); }
+};
+
+function loadStickyNotes() {
+    if (unsubSticky) unsubSticky();
+    const grid = document.getElementById('sticky-board-grid');
+    grid.innerHTML = '<div class="text-center italic text-slate-500 col-span-full">Pinning sticky notes...</div>';
+
+    unsubSticky = onSnapshot(query(collection(db, "sticky_board"), orderBy("createdAt", "desc")), (snapshot) => {
+        grid.innerHTML = '';
+        if (snapshot.empty) {
+            grid.innerHTML = '<div class="text-center italic text-slate-500 col-span-full">No sticky notes on the board yet. Be the first to pin one!</div>';
+            return;
+        }
+
+        const colorClasses = {
+            yellow: 'bg-yellow-100 text-amber-950 border-amber-300',
+            pink: 'bg-pink-100 text-rose-950 border-pink-300',
+            blue: 'bg-blue-100 text-blue-950 border-blue-300',
+            green: 'bg-emerald-100 text-emerald-950 border-emerald-300'
+        };
+
+        snapshot.forEach(docSnap => {
+            const note = docSnap.data();
+            const colorClass = colorClasses[note.color] || colorClasses.yellow;
+            const canDelete = note.authorId === currentUser.uid || ['super_admin', 'admin'].includes(userProfile.role);
+
+            const div = document.createElement('div');
+            div.className = `${colorClass} p-3.5 sketched-border flex flex-col justify-between gap-3 relative shadow-md rotate-[-1deg] hover:rotate-0 transition-transform min-h-[130px]`;
+            
+            const deleteBtn = canDelete ? `<button onclick="deleteStickyNote('${docSnap.id}')" class="text-rose-600 font-bold hover:scale-110 text-xs bg-white/60 rounded px-1.5 py-0.5" title="Remove Note">✖</button>` : '';
+
+            div.innerHTML = `
+                <div class="absolute -top-3 left-1/2 -translate-x-1/2 text-xl">📌</div>
+                <div class="text-lg leading-snug break-words mt-1">${escapeHTML(note.text)}</div>
+                <div class="flex justify-between items-center text-xs border-t border-black/10 pt-2 mt-1">
+                    <span class="font-bold cursor-pointer hover:underline" onclick="showProfile('${note.authorId}')">${escapeHTML(note.authorEmoji||'👤')} @${escapeHTML(note.authorName)}</span>
+                    ${deleteBtn}
+                </div>
+            `;
+            grid.appendChild(div);
+        });
+    });
+}
+
+window.deleteStickyNote = async (id) => {
+    if (confirm("Take down this sticky note?")) {
+        try {
+            await deleteDoc(doc(db, "sticky_board", id));
+        } catch(e) { console.error("Delete sticky error:", e); }
+    }
+};
 
 // --- ARCADE & PUZZLES LOGIC ---
 const puzzleModal = document.getElementById('puzzle-modal');

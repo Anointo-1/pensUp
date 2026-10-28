@@ -40,6 +40,11 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /sticky_board/{noteId} {
+      allow read, create: if signedIn();
+      allow delete: if signedIn() && (resource.data.authorId == request.auth.uid || isAdmin());
+    }
+
     match /usernames/{username} {
       allow read: if true;
       allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
