@@ -497,6 +497,27 @@ function renderMessage(id, data, containerEl, roomStr) {
     containerEl.appendChild(wrapper);
 }
 
+// --- BADGE SYSTEM ENGINE ---
+function calculateUserBadges(userData, postCount = 0) {
+    const badges = [];
+    const role = userData.role || 'user';
+    const followers = userData.followersCount || 0;
+
+    if (['super_admin', 'admin'].includes(role)) {
+        badges.push({ title: "👑 Notebook Admin", bg: "bg-amber-200 text-amber-900 border-amber-400" });
+    }
+    if (postCount >= 5) {
+        badges.push({ title: "✍️ Active Scribbler", bg: "bg-indigo-100 text-indigo-800 border-indigo-300" });
+    }
+    if (followers >= 3) {
+        badges.push({ title: "🌟 Popular Note", bg: "bg-emerald-100 text-emerald-800 border-emerald-300" });
+    }
+    if (userData.following && userData.following.length >= 5) {
+        badges.push({ title: "🤝 Study Buddy", bg: "bg-blue-100 text-blue-800 border-blue-300" });
+    }
+    return badges;
+}
+
 // --- FOLLOWING LOGIC ---
 window.toggleFollow = async (targetUid) => {
     if (!currentUser || currentUser.uid === targetUid) return;
@@ -621,7 +642,24 @@ window.showProfile = async (uid) => {
             dmBtn.onclick = () => openDmChat(uid, p.username, p.emoji, p.bio);
 
             const followersSnap = await getDocs(query(collection(db, "users"), where("following", "array-contains", uid)));
+            const userPostsSnap = await getDocs(collection(db, `users/${uid}/posts`));
+            
             document.getElementById('p-modal-followers-count').textContent = `${followersSnap.size} Followers`;
+
+            // Render Badges
+            const badgeData = { ...p, followersCount: followersSnap.size };
+            const earnedBadges = calculateUserBadges(badgeData, userPostsSnap.size);
+            
+            let badgesContainer = document.getElementById('p-modal-badges');
+            if (!badgesContainer) {
+                badgesContainer = document.createElement('div');
+                badgesContainer.id = 'p-modal-badges';
+                badgesContainer.className = "flex gap-1.5 flex-wrap justify-center mt-2";
+                document.getElementById('p-modal-bio').after(badgesContainer);
+            }
+            badgesContainer.innerHTML = earnedBadges.map(b => 
+                `<span class="text-xs font-bold px-2 py-0.5 rounded border ${b.bg} sketched-border-alt">${b.title}</span>`
+            ).join('');
         }
         loadProfilePosts(uid);
     } catch (e) { console.error("Profile fetch error:", e); }
@@ -665,7 +703,7 @@ function renderPostCard(postId, post, ownerUid, containerEl, canDelete) {
     
     const div = document.createElement('div');
     div.id = `post-${postId}`;
-    div.className = "bg-white p-3 sketched-border-alt flex flex-col gap-1.5 relative group shadow-xs transition-all duration-500";
+    div.className = "bg-white p-3.5 sketched-border-alt flex flex-col gap-2 relative group shadow-xs transition-all duration-500 paper-mask";
     const timeStr = post.createdAt ? post.createdAt.toDate().toLocaleDateString() : '';
     
     const deleteBtnHtml = canDelete 
@@ -673,24 +711,28 @@ function renderPostCard(postId, post, ownerUid, containerEl, canDelete) {
         : '';
 
     const authorHeader = post.authorName ? `
-        <div class="flex items-center gap-1.5 cursor-pointer hover:opacity-80 pb-1 border-b border-slate-100" onclick="showProfile('${ownerUid}')">
-            <span class="text-lg">${escapeHTML(post.authorEmoji || '👤')}</span>
-            <span class="font-bold text-xs text-indigo-600">${escapeHTML(post.authorName)}</span>
+        <div class="flex items-center justify-between pb-1.5 border-b border-slate-200/60">
+            <div class="flex items-center gap-2 cursor-pointer hover:opacity-80" onclick="showProfile('${ownerUid}')">
+                <span class="text-xl bg-yellow-100 p-1 rounded-full sketched-border shrink-0">${escapeHTML(post.authorEmoji || '👤')}</span>
+                <span class="font-bold text-sm text-indigo-600">@${escapeHTML(post.authorName)}</span>
+            </div>
+            ${deleteBtnHtml}
         </div>` : '';
 
-    const doodleImgHtml = post.doodleImage ? `<div class="mt-1"><img src="${post.doodleImage}" class="max-h-40 rounded sketched-border bg-slate-50 p-1 object-contain" alt="Doodle sketch"></div>` : '';
+    const doodleImgHtml = post.doodleImage ? `<div class="mt-1"><img src="${post.doodleImage}" class="max-h-48 rounded sketched-border bg-white p-1 object-contain" alt="Doodle sketch"></div>` : '';
 
     const shareUrl = `${window.location.origin}${window.location.pathname}?post=${postId}`;
 
     div.innerHTML = `
         ${authorHeader}
-        <div class="flex justify-between items-start gap-2">
-            <div class="text-base text-slate-800 break-words flex-1">${parseLinks(escapeHTML(post.text))}</div>
-            ${deleteBtnHtml}
-        </div>
+        <div class="text-lg text-slate-800 break-words my-1 font-['Patrick_Hand'] leading-relaxed">${parseLinks(escapeHTML(post.text))}</div>
         ${doodleImgHtml}
-        <div class="flex justify-between items-center text-xs border-t border-slate-100 pt-1.5 mt-0.5">
-            <span class="text-slate-400 font-bold cursor-pointer hover:underline" onclick="navigator.clipboard.writeText('${shareUrl}'); alert('Direct post link copied for sharing!');">${timeStr} 🔗 Share</span>
+        <div class="flex justify-between items-center text-xs border-t border-slate-200/60 pt-2 mt-1 flex-wrap gap-2">
+            <div class="flex items-center gap-2">
+                <span class="text-slate-400 font-bold">${timeStr}</span>
+                <button onclick="exportPostAsImage('post-${postId}')" class="text-indigo-600 font-bold hover:underline bg-indigo-50 px-2 py-0.5 rounded sketched-border-alt" title="Download styled paper note image">📷 Export Note</button>
+                <button onclick="navigator.clipboard.writeText('${shareUrl}'); alert('Direct link copied!');" class="text-slate-500 font-bold hover:underline" title="Copy Link">🔗 Share</button>
+            </div>
             <div class="flex gap-3">
                 <button onclick="togglePostVote('${ownerUid}', '${postId}', 'like')" class="${hasLiked ? 'text-indigo-600 scale-110' : 'text-slate-400'} font-bold hover:scale-110 transition-transform">👍 ${likes.length}</button>
                 <button onclick="togglePostVote('${ownerUid}', '${postId}', 'dislike')" class="${hasDisliked ? 'text-rose-600 scale-110' : 'text-slate-400'} font-bold hover:scale-110 transition-transform">👎 ${dislikes.length}</button>
@@ -699,6 +741,21 @@ function renderPostCard(postId, post, ownerUid, containerEl, canDelete) {
     `;
     containerEl.appendChild(div);
 }
+
+// EXPORT POST AS IMAGE
+window.exportPostAsImage = (elementId) => {
+    const cardEl = document.getElementById(elementId);
+    if (!cardEl || typeof html2canvas === 'undefined') {
+        alert("Image generator loading, please try again in a moment!");
+        return;
+    }
+    html2canvas(cardEl, { backgroundColor: '#fdfaf6', scale: 2 }).then(canvas => {
+        const link = document.createElement('a');
+        link.download = `PensUp_Note_${Date.now()}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+    }).catch(e => console.error("Export note error:", e));
+};
 
 document.getElementById('btn-publish-post').onclick = async () => {
     const input = document.getElementById('post-input');
@@ -747,7 +804,7 @@ window.togglePostVote = async (postOwnerUid, postId, type) => {
     await updateDoc(globalRef, updates).catch(() => {});
 };
 
-// --- GLOBAL FEED RANKING ALGORITHM & REAL-TIME SEARCH ---
+// --- GLOBAL FEED RANKING ALGORITHM & SEARCH ---
 function loadGlobalFeed(scrollToPostId = null) {
     if (unsubFeed) unsubFeed();
     const container = document.getElementById('global-feed-list');
@@ -783,7 +840,6 @@ function loadGlobalFeed(scrollToPostId = null) {
 
         renderFeedList(globalPostsCache, container);
 
-        // SMART DEEP LINK SCROLLER
         if (scrollToPostId) {
             setTimeout(() => {
                 const targetEl = document.getElementById(`post-${scrollToPostId}`);
@@ -809,7 +865,6 @@ function renderFeedList(posts, containerEl) {
     });
 }
 
-// REAL-TIME FEED SEARCH FILTER
 const feedSearchInput = document.getElementById('feed-search-input');
 if (feedSearchInput) {
     feedSearchInput.oninput = (e) => {
@@ -1182,7 +1237,7 @@ UI.adminBtn.onclick = async () => {
                     <span class="font-bold">${escapeHTML(u.emoji||'👤')} ${escapeHTML(u.username)} ${u.suspended ? '<b class="text-rose-500">(Banned)</b>' : ''}</span>
                     <div class="flex gap-1 text-sm font-bold">
                         ${!isTargetSuper ? `<button onclick="toggleSuspend('${docSnap.id}',${!u.suspended})" class="bg-amber-400 text-white px-2 py-1 sketched-border hover:bg-amber-500">${u.suspended ? 'Unban' : 'Ban'}</button>` : ''}
-                        ${(iAmSuper && !isTargetSuper) ? `<button onclick="toggleRole('${docSnap.id}', '${u.role === 'admin' ? 'user' : 'admin'}' )" class="bg-indigo-400 text-white px-2 py-1 sketched-border hover:bg-indigo-500">${u.role === 'admin' ? 'Demote' : 'Make Admin'}</button>` : ''}
+                        ${(iAmSuper && !isTargetSuper) ? `<button onclick="toggleRole('${docSnap.id}', '${u.role === 'admin' ? 'user' : 'admin'}')" class="bg-indigo-400 text-white px-2 py-1 sketched-border hover:bg-indigo-500">${u.role === 'admin' ? 'Demote' : 'Make Admin'}</button>` : ''}
                     </div>
                 </div>`;
             list.appendChild(div);
