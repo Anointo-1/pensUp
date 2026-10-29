@@ -127,7 +127,7 @@ function applySettings() {
             document.documentElement.requestFullscreen().catch(e => console.warn("Fullscreen request blocked:", e));
         }
     } else {
-        if (document.fullscreenElement) {
+        if (document.exitFullscreen && document.fullscreenElement) {
             document.exitFullscreen().catch(e => console.warn("Exit fullscreen failed:", e));
         }
     }
@@ -214,14 +214,14 @@ const escapeHTML = (str) => str ? String(str).replace(/&/g, "&amp;").replace(/</
 
 const parseTagsAndLinks = (safeText) => {
     let parsed = safeText;
-    // Parse links
+    // Parse links first
     if (linksEnabledGlobally) {
         parsed = parsed.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" class="text-blue-600 underline font-semibold hover:text-blue-800 break-all pointer-events-auto" onclick="event.stopPropagation()">$1</a>');
     } else {
         parsed = parsed.replace(/(https?:\/\/[^\s]+)/g, '<span class="italic text-slate-400 bg-slate-100 px-1 rounded">[Link Disabled by Admin]</span>');
     }
-    // Parse #tags
-    parsed = parsed.replace(/#([\w\-]+)/g, '<span onclick="event.stopPropagation(); filterByTag(\'$1\')" class="text-indigo-600 font-bold bg-indigo-50 px-1.5 py-0.5 rounded sketched-border-alt cursor-pointer hover:bg-indigo-100">#$1</span>');
+    // Parse #tags (Requires starting with a letter so entities like #039 from quotes are ignored)
+    parsed = parsed.replace(/#([a-zA-Z][\w\-]*)/g, '<span onclick="event.stopPropagation(); filterByTag(\'$1\')" class="text-indigo-600 font-bold bg-indigo-50 px-1.5 py-0.5 rounded sketched-border-alt cursor-pointer hover:bg-indigo-100">#$1</span>');
     return parsed;
 };
 
@@ -233,15 +233,21 @@ const currentMonth = new Date().getMonth();
 if (currentMonth === 9) { UI.themeSel.value = 'theme-halloween'; UI.themeSel.dispatchEvent(new Event('change')); }
 else if (currentMonth === 11) { UI.themeSel.value = 'theme-xmas'; UI.themeSel.dispatchEvent(new Event('change')); }
 
-// Guest Mode Login
+// Robust Guest Mode Login (Using automated guest credentials to avoid admin-restricted-operation)
 document.getElementById('btn-guest').onclick = async () => {
     document.getElementById('auth-loading').classList.remove('hidden');
+    const guestEmail = "guest_viewer@notebook.local";
+    const guestPass = "notebookguest123";
     try {
-        const cred = await signInAnonymously(auth);
-        const guestName = `guest_${cred.user.uid.substring(0, 5)}`;
-        await setDoc(doc(db, "users", cred.user.uid), { 
-            username: guestName, role: 'guest', suspended: false, emoji: '👀', bio: 'Browsing as guest', following: [], lastActive: serverTimestamp() 
-        }, { merge: true });
+        try {
+            await signInWithEmailAndPassword(auth, guestEmail, guestPass);
+        } catch (signInErr) {
+            // If guest account doesn't exist yet, create it automatically
+            const cred = await createUserWithEmailAndPassword(auth, guestEmail, guestPass);
+            await setDoc(doc(db, "users", cred.user.uid), { 
+                username: "guest_viewer", role: 'guest', suspended: false, emoji: '👀', bio: 'Browsing as guest', following: [], lastActive: serverTimestamp() 
+            });
+        }
     } catch (e) {
         document.getElementById('auth-loading').classList.add('hidden');
         showError("Guest login failed: " + e.message);
@@ -252,7 +258,7 @@ document.getElementById('btn-register').onclick = async () => {
     const u = document.getElementById('auth-username').value.trim().toLowerCase().replace(/\s+/g, '');
     const p = document.getElementById('auth-password').value;
     if (u.length < 3 || p.length < 6) return showError("Username min 3 chars, password min 6 chars.");
-    document.getElementById('auth-loading').classList.remove('hidden');
+    document.getElementById('auth-loading').classList.add('hidden');
     isRegistering = true; 
     try {
         const usernameDoc = await getDoc(doc(db, "usernames", u));
@@ -274,19 +280,33 @@ document.getElementById('btn-login').onclick = async () => {
     catch (e) { document.getElementById('auth-loading').classList.add('hidden'); showError("Invalid username or password."); }
 };
 
-document.getElementById('btn-logout-launch').onclick = () => { document.getElementById('auth-loading').classList.add('hidden'); signOut(auth); };
+// Clean Logout Handler (Unsubscribes listeners & clears intervals before signing out to prevent permission errors)
+document.getElementById('btn-logout-launch').onclick = async () => {
+    document.getElementById('auth-loading').classList.add('hidden');
+    if (presenceInterval) { clearInterval(presenceInterval); presenceInterval = null; }
+    if (unsubPresence) { unsubPresence(); unsubPresence = null; }
+    if (unsubNotifs) { unsubNotifs(); unsubNotifs = null; }
+    if (userDocUnsub) { userDocUnsub(); userDocUnsub = null; }
+    currentUser = null;
+    userProfile = null;
+    try {
+        await signOut(auth);
+    } catch (e) {
+        console.warn("Sign out note:", e);
+    }
+};
 
 function startPresenceHeartbeat(uid) {
     if (presenceInterval) clearInterval(presenceInterval);
     const updatePresence = async () => {
+        if (!currentUser || !uid) return;
         try {
             await updateDoc(doc(db, "users", uid), { lastActive: serverTimestamp() });
         } catch (e) { console.warn("Presence heartbeat error:", e); }
     };
     updatePresence();
-    presenceInterval = setInterval(updatePresence, 30000); // every 30s
+    presenceInterval = setInterval(updatePresence, 30000);
 
-    // Listen to online count
     if (unsubPresence) unsubPresence();
     unsubPresence = onSnapshot(collection(db, "users"), (snapshot) => {
         const now = Date.now();
@@ -295,7 +315,7 @@ function startPresenceHeartbeat(uid) {
             const data = docSnap.data();
             if (data.lastActive) {
                 const lastTime = data.lastActive.toDate ? data.lastActive.toDate().getTime() : 0;
-                if ((now - lastTime) < 60000) { // active within last 60s
+                if ((now - lastTime) < 60000) {
                     activeCount++;
                 }
             }
@@ -310,7 +330,12 @@ function syncUserProfile(user) {
     userDocUnsub = onSnapshot(doc(db, "users", user.uid), 
         (docSnap) => {
             if (isRegistering) return; 
-            if (!docSnap.exists() || docSnap.data().suspended) { signOut(auth); showError(docSnap.data()?.suspended ? "Account suspended." : "Account missing."); return; }
+            if (!docSnap.exists() || docSnap.data().suspended) { 
+                document.getElementById('auth-loading').classList.add('hidden');
+                signOut(auth); 
+                showError(docSnap.data()?.suspended ? "Account suspended." : "Account missing."); 
+                return; 
+            }
             
             const wasNull = !currentUser;
             userProfile = docSnap.data(); 
@@ -320,7 +345,6 @@ function syncUserProfile(user) {
             document.getElementById('auth-loading').classList.add('hidden');
             UI.auth.classList.add('hidden'); 
             
-            // ONLY show launch screen on initial login/load, not on background doc updates!
             if (wasNull && UI.app.classList.contains('hidden')) {
                 UI.launch.classList.remove('hidden');
             }
@@ -358,10 +382,9 @@ function syncUserProfile(user) {
                 if(linkBtn) linkBtn.textContent = linksEnabledGlobally ? "Links: ON" : "Links: OFF";
             });
         }, 
-        (error) => { document.getElementById('auth-loading').classList.add('hidden'); showError("Database error."); }
+        (error) => { document.getElementById('auth-loading').classList.add('hidden'); console.warn("User sync auth note:", error); }
     );
 }
-
 
 onAuthStateChanged(auth, (user) => {
     if (isRegistering) return; 
@@ -373,6 +396,7 @@ onAuthStateChanged(auth, (user) => {
         if (unsubNotifs) { unsubNotifs(); unsubNotifs = null; }
         if (presenceInterval) { clearInterval(presenceInterval); presenceInterval = null; }
         if (unsubPresence) { unsubPresence(); unsubPresence = null; }
+        if (userDocUnsub) { userDocUnsub(); userDocUnsub = null; }
     }
 });
 
@@ -507,7 +531,7 @@ function renderPinnedSection(pinnedList) {
     banner.classList.remove('hidden'); container.innerHTML = '';
     pinnedList.slice(0, 5).forEach((item) => {
         const div = document.createElement('div'); div.className = "flex items-center justify-between text-sm bg-white p-1.5 sketched-border-alt gap-2";
-        const unpinBtn = userProfile.role === 'super_admin' ? `<button onclick="togglePin('${item.id}', false)" class="text-rose-500 font-bold hover:scale-110 ml-2" title="Unpin Note">✖</button>` : '';
+        const unpinBtn = userProfile && userProfile.role === 'super_admin' ? `<button onclick="togglePin('${item.id}', false)" class="text-rose-500 font-bold hover:scale-110 ml-2" title="Unpin Note">✖</button>` : '';
         div.innerHTML = `<div class="flex items-center gap-1.5 overflow-hidden text-ellipsis whitespace-nowrap cursor-pointer flex-1" onclick="jumpToMessage('${item.id}')"><span class="font-bold text-indigo-600 shrink-0">${escapeHTML(item.senderName)}:</span><span class="text-slate-700 overflow-hidden text-ellipsis">${parseTagsAndLinks(escapeHTML(item.text))}</span></div>${unpinBtn}`;
         container.appendChild(div);
     });
@@ -524,13 +548,13 @@ window.jumpToMessage = (id) => {
 };
 
 window.togglePin = async (id, shouldPin) => {
-    if (userProfile.role !== 'super_admin') return;
+    if (!userProfile || userProfile.role !== 'super_admin') return;
     if (shouldPin && currentPinnedCount >= 5) return alert("Maximum 5 notes can be pinned! Unpin one first.");
     try { await updateDoc(doc(db, `rooms/${ROOM_ID}/messages`, id), { isPinned: shouldPin }); } catch (e) { console.error("Pin error:", e); }
 };
 
 async function sendMessage(text) {
-    if (!currentUser || userProfile.suspended || userProfile.role === 'guest') return;
+    if (!currentUser || (userProfile && userProfile.suspended) || (userProfile && userProfile.role === 'guest')) return;
     try {
         if (settings.soundEnabled) { writeSound.currentTime = 0; writeSound.play().catch(e => console.warn("Audio blocked:", e)); }
         await addDoc(collection(db, `rooms/${ROOM_ID}/messages`), {
@@ -606,7 +630,7 @@ function calculateUserBadges(userData, postCount = 0) {
 
 // --- FOLLOWING LOGIC ---
 window.toggleFollow = async (targetUid) => {
-    if (!currentUser || currentUser.uid === targetUid || userProfile.role === 'guest') return;
+    if (!currentUser || currentUser.uid === targetUid || (userProfile && userProfile.role === 'guest')) return;
     const isFollowing = (userProfile.following || []).includes(targetUid);
     const userRef = doc(db, "users", currentUser.uid);
 
