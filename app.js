@@ -212,17 +212,21 @@ function listenForNotifications(uid) {
 
 const escapeHTML = (str) => str ? String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;") : '';
 
-const parseTagsAndLinks = (safeText) => {
-    let parsed = safeText;
-    // Parse links first
+const parseTagsAndLinks = (rawText) => {
+    // 1. Escape HTML first to prevent injection
+    let safeText = escapeHTML(rawText);
+
+    // 2. Parse links
     if (linksEnabledGlobally) {
-        parsed = parsed.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" class="text-blue-600 underline font-semibold hover:text-blue-800 break-all pointer-events-auto" onclick="event.stopPropagation()">$1</a>');
+        safeText = safeText.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" class="text-blue-600 underline font-semibold hover:text-blue-800 break-all pointer-events-auto" onclick="event.stopPropagation()">$1</a>');
     } else {
-        parsed = parsed.replace(/(https?:\/\/[^\s]+)/g, '<span class="italic text-slate-400 bg-slate-100 px-1 rounded">[Link Disabled by Admin]</span>');
+        safeText = safeText.replace(/(https?:\/\/[^\s]+)/g, '<span class="italic text-slate-400 bg-slate-100 px-1 rounded">[Link Disabled by Admin]</span>');
     }
-    // Parse #tags (Requires starting with a letter so entities like #039 from quotes are ignored)
-    parsed = parsed.replace(/#([a-zA-Z][\w\-]*)/g, '<span onclick="event.stopPropagation(); filterByTag(\'$1\')" class="text-indigo-600 font-bold bg-indigo-50 px-1.5 py-0.5 rounded sketched-border-alt cursor-pointer hover:bg-indigo-100">#$1</span>');
-    return parsed;
+
+    // 3. Parse #tags safely (ignoring HTML entities like #039)
+    safeText = safeText.replace(/#([a-zA-Z][\w\-]*)/g, '<span onclick="event.stopPropagation(); filterByTag(\'$1\')" class="text-indigo-600 font-bold bg-indigo-50 px-1.5 py-0.5 rounded sketched-border-alt cursor-pointer hover:bg-indigo-100">#$1</span>');
+
+    return safeText;
 };
 
 const showError = (msg) => { UI.err.textContent = msg; UI.err.classList.remove('hidden'); setTimeout(() => UI.err.classList.add('hidden'), 4000); };
@@ -233,24 +237,18 @@ const currentMonth = new Date().getMonth();
 if (currentMonth === 9) { UI.themeSel.value = 'theme-halloween'; UI.themeSel.dispatchEvent(new Event('change')); }
 else if (currentMonth === 11) { UI.themeSel.value = 'theme-xmas'; UI.themeSel.dispatchEvent(new Event('change')); }
 
-// Robust Guest Mode Login (Using automated guest credentials to avoid admin-restricted-operation)
+// Robust Anonymous Guest Mode Login (Supports multiple concurrent guests safely)
 document.getElementById('btn-guest').onclick = async () => {
     document.getElementById('auth-loading').classList.remove('hidden');
-    const guestEmail = "guest_viewer@notebook.local";
-    const guestPass = "notebookguest123";
     try {
-        try {
-            await signInWithEmailAndPassword(auth, guestEmail, guestPass);
-        } catch (signInErr) {
-            // If guest account doesn't exist yet, create it automatically
-            const cred = await createUserWithEmailAndPassword(auth, guestEmail, guestPass);
-            await setDoc(doc(db, "users", cred.user.uid), { 
-                username: "guest_viewer", role: 'guest', suspended: false, emoji: '👀', bio: 'Browsing as guest', following: [], lastActive: serverTimestamp() 
-            });
-        }
+        const cred = await signInAnonymously(auth);
+        const guestName = `guest_${cred.user.uid.substring(0, 5)}`;
+        await setDoc(doc(db, "users", cred.user.uid), { 
+            username: guestName, role: 'guest', suspended: false, emoji: '👀', bio: 'Browsing as guest', following: [], lastActive: serverTimestamp() 
+        }, { merge: true });
     } catch (e) {
         document.getElementById('auth-loading').classList.add('hidden');
-        showError("Guest login failed: " + e.message);
+        showError("Guest login failed (Ensure Anonymous auth is enabled in Firebase console): " + e.message);
     }
 };
 
@@ -258,7 +256,7 @@ document.getElementById('btn-register').onclick = async () => {
     const u = document.getElementById('auth-username').value.trim().toLowerCase().replace(/\s+/g, '');
     const p = document.getElementById('auth-password').value;
     if (u.length < 3 || p.length < 6) return showError("Username min 3 chars, password min 6 chars.");
-    document.getElementById('auth-loading').classList.add('hidden');
+    document.getElementById('auth-loading').classList.remove('hidden');
     isRegistering = true; 
     try {
         const usernameDoc = await getDoc(doc(db, "usernames", u));
@@ -280,7 +278,7 @@ document.getElementById('btn-login').onclick = async () => {
     catch (e) { document.getElementById('auth-loading').classList.add('hidden'); showError("Invalid username or password."); }
 };
 
-// Clean Logout Handler (Unsubscribes listeners & clears intervals before signing out to prevent permission errors)
+// Clean Logout Handler
 document.getElementById('btn-logout-launch').onclick = async () => {
     document.getElementById('auth-loading').classList.add('hidden');
     if (presenceInterval) { clearInterval(presenceInterval); presenceInterval = null; }
@@ -532,7 +530,7 @@ function renderPinnedSection(pinnedList) {
     pinnedList.slice(0, 5).forEach((item) => {
         const div = document.createElement('div'); div.className = "flex items-center justify-between text-sm bg-white p-1.5 sketched-border-alt gap-2";
         const unpinBtn = userProfile && userProfile.role === 'super_admin' ? `<button onclick="togglePin('${item.id}', false)" class="text-rose-500 font-bold hover:scale-110 ml-2" title="Unpin Note">✖</button>` : '';
-        div.innerHTML = `<div class="flex items-center gap-1.5 overflow-hidden text-ellipsis whitespace-nowrap cursor-pointer flex-1" onclick="jumpToMessage('${item.id}')"><span class="font-bold text-indigo-600 shrink-0">${escapeHTML(item.senderName)}:</span><span class="text-slate-700 overflow-hidden text-ellipsis">${parseTagsAndLinks(escapeHTML(item.text))}</span></div>${unpinBtn}`;
+        div.innerHTML = `<div class="flex items-center gap-1.5 overflow-hidden text-ellipsis whitespace-nowrap cursor-pointer flex-1" onclick="jumpToMessage('${item.id}')"><span class="font-bold text-indigo-600 shrink-0">${escapeHTML(item.senderName)}:</span><span class="text-slate-700 overflow-hidden text-ellipsis">${parseTagsAndLinks(item.text)}</span></div>${unpinBtn}`;
         container.appendChild(div);
     });
 }
@@ -589,7 +587,7 @@ function renderMessage(id, data, containerEl, roomStr) {
         displayHtml = `<span class="italic text-slate-500 text-lg opacity-80">✂ Ripped out by ${escapeHTML(data.deletedBy)}</span>`;
         bgClass = 'bg-slate-200/50 border-slate-300'; 
     } else {
-        displayHtml = parseTagsAndLinks(escapeHTML(data.text));
+        displayHtml = parseTagsAndLinks(data.text);
     }
 
     const pinBtn = (roomStr === ROOM_ID && isSuperAdmin && !data.isDeleted) ? `<button onclick="togglePin('${id}', ${!data.isPinned})" class="bg-amber-100 text-amber-800 rounded-full w-6 h-6 text-xs flex items-center justify-center hover:scale-110 sketched-border" title="${data.isPinned ? 'Unpin' : 'Pin'}">📌</button>` : '';
@@ -863,7 +861,7 @@ function renderPostCard(postId, post, ownerUid, containerEl, canDelete) {
 
     div.innerHTML = `
         ${authorHeader}
-        <div class="text-lg text-slate-800 break-words my-1 font-['Patrick_Hand'] leading-relaxed">${parseTagsAndLinks(escapeHTML(post.text))}</div>
+        <div class="text-lg text-slate-800 break-words my-1 font-['Patrick_Hand'] leading-relaxed">${parseTagsAndLinks(post.text)}</div>
         ${doodleImgHtml}
         <div class="flex justify-between items-center text-xs border-t border-slate-200/60 pt-2 mt-1 flex-wrap gap-2">
             <div class="flex items-center gap-2">
@@ -871,7 +869,7 @@ function renderPostCard(postId, post, ownerUid, containerEl, canDelete) {
                 <button onclick="exportPostAsImage('post-${postId}')" class="no-export text-indigo-600 font-bold hover:underline bg-indigo-50 px-2 py-0.5 rounded sketched-border-alt" title="Download styled paper note image">📷 Export Note</button>
                 <button onclick="navigator.clipboard.writeText('${shareUrl}'); alert('Direct link copied!');" class="no-export text-slate-500 font-bold hover:underline" title="Copy Link">🔗 Share</button>
             </div>
-            <div class="flex gap-3 ${voteDisabled}">
+            <div class="no-export flex gap-3 ${voteDisabled}">
                 <button onclick="togglePostVote('${ownerUid}', '${postId}', 'like')" class="${hasLiked ? 'text-indigo-600 scale-110' : 'text-slate-400'} font-bold hover:scale-110 transition-transform">👍 ${likes.length}</button>
                 <button onclick="togglePostVote('${ownerUid}', '${postId}', 'dislike')" class="${hasDisliked ? 'text-rose-600 scale-110' : 'text-slate-400'} font-bold hover:scale-110 transition-transform">👎 ${dislikes.length}</button>
             </div>
@@ -880,7 +878,7 @@ function renderPostCard(postId, post, ownerUid, containerEl, canDelete) {
     containerEl.appendChild(div);
 }
 
-// EXPORT POST AS IMAGE (Ignoring Action Buttons)
+// EXPORT POST AS IMAGE (Ignoring elements with .no-export class)
 window.exportPostAsImage = (elementId) => {
     const cardEl = document.getElementById(elementId);
     if (!cardEl || typeof html2canvas === 'undefined') {
