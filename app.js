@@ -311,12 +311,20 @@ function syncUserProfile(user) {
         (docSnap) => {
             if (isRegistering) return; 
             if (!docSnap.exists() || docSnap.data().suspended) { signOut(auth); showError(docSnap.data()?.suspended ? "Account suspended." : "Account missing."); return; }
+            
+            const wasNull = !currentUser;
             userProfile = docSnap.data(); 
             if (!userProfile.following) userProfile.following = [];
             currentUser = user;
             
             document.getElementById('auth-loading').classList.add('hidden');
-            UI.auth.classList.add('hidden'); UI.launch.classList.remove('hidden');
+            UI.auth.classList.add('hidden'); 
+            
+            // ONLY show launch screen on initial login/load, not on background doc updates!
+            if (wasNull && UI.app.classList.contains('hidden')) {
+                UI.launch.classList.remove('hidden');
+            }
+
             setTimeGreeting();
             document.getElementById('launch-username').textContent = userProfile.username;
             document.getElementById('btn-open-emoji-picker').textContent = userProfile.emoji || '👤';
@@ -353,6 +361,7 @@ function syncUserProfile(user) {
         (error) => { document.getElementById('auth-loading').classList.add('hidden'); showError("Database error."); }
     );
 }
+
 
 onAuthStateChanged(auth, (user) => {
     if (isRegistering) return; 
