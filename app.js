@@ -91,6 +91,46 @@ function updateSEO({ title, description, image, url, authorName, datePublished }
     ldScript.textContent = JSON.stringify(schemaData);
 }
 
+// --- DYNAMIC ROUTER & DEEP LINK SCROLLER ---
+async function handleUrlRouting() {
+    const params = new URLSearchParams(window.location.search);
+    const postId = params.get('post');
+    const puzzleId = params.get('puzzle');
+    const profileUid = params.get('profile');
+
+    if (postId) {
+        try {
+            const postSnap = await getDoc(doc(db, "global_posts", postId));
+            if (postSnap.exists()) {
+                const data = postSnap.data();
+                updateSEO({
+                    title: `Discussion by @${data.authorName}: "${data.text.substring(0, 30)}..."`,
+                    description: data.text || "Check out this handwritten note on PensUp Pro!",
+                    image: data.doodleImage || "https://anointo-1.github.io/pensUp/PensUp.jpg",
+                    authorName: data.authorName,
+                    datePublished: data.createdAt ? data.createdAt.toDate().toISOString() : new Date().toISOString()
+                });
+                switchView('feed');
+                loadGlobalFeed(postId);
+            }
+        } catch (e) { console.warn("Router post fetch error:", e); }
+    } else if (puzzleId) {
+        try {
+            const puzzleSnap = await getDoc(doc(db, "puzzles", puzzleId));
+            if (puzzleSnap.exists()) {
+                const data = puzzleSnap.data();
+                updateSEO({
+                    title: `Play Arcade Game: ${data.title}`,
+                    description: `Play and run ${data.title} inside the PensUp Arcade!`
+                });
+                switchView('arcade');
+                runPuzzleSnippet(data.title, data.code);
+            }
+        } catch (e) { console.warn("Router puzzle fetch error:", e); }
+    } else if (profileUid) {
+        showProfile(profileUid);
+    }
+}
 
 function applySettings() {
     settings.chatBoxLift ? UI.footer.classList.add('mb-12') : UI.footer.classList.remove('mb-12');
@@ -202,19 +242,13 @@ function listenForNotifications(uid) {
 const escapeHTML = (str) => str ? String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;") : '';
 
 const parseTagsAndLinks = (rawText) => {
-    // 1. Escape HTML first to prevent injection
     let safeText = escapeHTML(rawText);
-
-    // 2. Parse links
     if (linksEnabledGlobally) {
         safeText = safeText.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" class="text-blue-600 underline font-semibold hover:text-blue-800 break-all pointer-events-auto" onclick="event.stopPropagation()">$1</a>');
     } else {
         safeText = safeText.replace(/(https?:\/\/[^\s]+)/g, '<span class="italic text-slate-400 bg-slate-100 px-1 rounded">[Link Disabled by Admin]</span>');
     }
-
-    // 3. Parse #tags safely (ignoring HTML entities like #039)
     safeText = safeText.replace(/#([a-zA-Z][\w\-]*)/g, '<span onclick="event.stopPropagation(); filterByTag(\'$1\')" class="text-indigo-600 font-bold bg-indigo-50 px-1.5 py-0.5 rounded sketched-border-alt cursor-pointer hover:bg-indigo-100">#$1</span>');
-
     return safeText;
 };
 
@@ -226,7 +260,7 @@ const currentMonth = new Date().getMonth();
 if (currentMonth === 9) { UI.themeSel.value = 'theme-halloween'; UI.themeSel.dispatchEvent(new Event('change')); }
 else if (currentMonth === 11) { UI.themeSel.value = 'theme-xmas'; UI.themeSel.dispatchEvent(new Event('change')); }
 
-// Robust Anonymous Guest Mode Login (Supports multiple concurrent guests safely)
+// Robust Anonymous Guest Mode Login[cite: 3]
 document.getElementById('btn-guest').onclick = async () => {
     document.getElementById('auth-loading').classList.remove('hidden');
     try {
@@ -245,7 +279,7 @@ document.getElementById('btn-register').onclick = async () => {
     const u = document.getElementById('auth-username').value.trim().toLowerCase().replace(/\s+/g, '');
     const p = document.getElementById('auth-password').value;
     if (u.length < 3 || p.length < 6) return showError("Username min 3 chars, password min 6 chars.");
-    document.getElementById('auth-loading').classList.remove('hidden');
+    document.getElementById('auth-loading').classList.add('hidden');
     isRegistering = true; 
     try {
         const usernameDoc = await getDoc(doc(db, "usernames", u));
@@ -267,7 +301,6 @@ document.getElementById('btn-login').onclick = async () => {
     catch (e) { document.getElementById('auth-loading').classList.add('hidden'); showError("Invalid username or password."); }
 };
 
-// Clean Logout Handler
 document.getElementById('btn-logout-launch').onclick = async () => {
     document.getElementById('auth-loading').classList.add('hidden');
     if (presenceInterval) { clearInterval(presenceInterval); presenceInterval = null; }
@@ -276,20 +309,14 @@ document.getElementById('btn-logout-launch').onclick = async () => {
     if (userDocUnsub) { userDocUnsub(); userDocUnsub = null; }
     currentUser = null;
     userProfile = null;
-    try {
-        await signOut(auth);
-    } catch (e) {
-        console.warn("Sign out note:", e);
-    }
+    try { await signOut(auth); } catch (e) { console.warn("Sign out note:", e); }
 };
 
 function startPresenceHeartbeat(uid) {
     if (presenceInterval) clearInterval(presenceInterval);
     const updatePresence = async () => {
         if (!currentUser || !uid) return;
-        try {
-            await updateDoc(doc(db, "users", uid), { lastActive: serverTimestamp() });
-        } catch (e) { console.warn("Presence heartbeat error:", e); }
+        try { await updateDoc(doc(db, "users", uid), { lastActive: serverTimestamp() }); } catch (e) { console.warn("Presence heartbeat error:", e); }
     };
     updatePresence();
     presenceInterval = setInterval(updatePresence, 30000);
@@ -302,9 +329,7 @@ function startPresenceHeartbeat(uid) {
             const data = docSnap.data();
             if (data.lastActive) {
                 const lastTime = data.lastActive.toDate ? data.lastActive.toDate().getTime() : 0;
-                if ((now - lastTime) < 60000) {
-                    activeCount++;
-                }
+                if ((now - lastTime) < 60000) activeCount++;
             }
         });
         const badge = document.getElementById('online-counter-badge');
@@ -387,7 +412,6 @@ onAuthStateChanged(auth, (user) => {
     }
 });
 
-// Navigation Tab Switcher
 const tabChat = document.getElementById('nav-tab-chat');
 const tabFeed = document.getElementById('nav-tab-feed');
 const tabArcade = document.getElementById('nav-tab-arcade');
@@ -425,7 +449,6 @@ function switchView(v) {
     }
 }
 
-// Emoji Handlers
 const emojiModal = document.getElementById('emoji-modal');
 const emojiGrid = document.getElementById('emoji-grid');
 ALL_EMOJIS.forEach(e => {
@@ -452,7 +475,6 @@ document.getElementById('launch-bio').onblur = async (e) => {
 };
 document.getElementById('btn-edit-board').onclick = async () => { const txt = prompt("New notice board text:"); if(txt !== null) await setDoc(doc(db, "app_settings", "launch_screen"), { text: txt }); };
 
-// Settings Modal
 const settingsModal = document.getElementById('settings-modal');
 document.getElementById('btn-settings').onclick = () => { applySettings(); settingsModal.classList.remove('hidden'); };
 document.getElementById('settings-close').onclick = () => settingsModal.classList.add('hidden');
@@ -487,7 +509,6 @@ document.getElementById('btn-enter-chat').onclick = () => {
 document.getElementById('btn-back-launch').onclick = () => { UI.app.classList.replace('flex', 'hidden'); UI.launch.classList.remove('hidden'); if(unsubMsg) unsubMsg(); };
 document.getElementById('user-badge').onclick = () => { if(currentUser) showProfile(currentUser.uid); };
 
-// --- Main Chat Logic ---
 function loadMessages() {
     if (unsubMsg) unsubMsg(); isInitialLoadDone = false;
     unsubMsg = onSnapshot(query(collection(db, `rooms/${ROOM_ID}/messages`), orderBy("createdAt", "asc")), 
@@ -594,7 +615,6 @@ function renderMessage(id, data, containerEl, roomStr) {
     containerEl.appendChild(wrapper);
 }
 
-// --- BADGE SYSTEM ENGINE ---
 function calculateUserBadges(userData, postCount = 0) {
     const badges = [];
     const role = userData.role || 'user';
@@ -615,7 +635,6 @@ function calculateUserBadges(userData, postCount = 0) {
     return badges;
 }
 
-// --- FOLLOWING LOGIC ---
 window.toggleFollow = async (targetUid) => {
     if (!currentUser || currentUser.uid === targetUid || (userProfile && userProfile.role === 'guest')) return;
     const isFollowing = (userProfile.following || []).includes(targetUid);
@@ -632,7 +651,6 @@ window.toggleFollow = async (targetUid) => {
     } catch(e) { console.error("Follow error:", e); }
 };
 
-// --- CANVAS DOODLE PAD LOGIC ---
 const doodleModal = document.getElementById('doodle-modal');
 const doodleCanvas = document.getElementById('doodle-canvas');
 const ctx = doodleCanvas.getContext('2d');
@@ -699,7 +717,6 @@ document.getElementById('btn-remove-doodle').onclick = () => {
     document.getElementById('post-doodle-preview-container').classList.add('hidden');
 };
 
-// --- POSTS & SMART ALGORITHM FEED LOGIC ---
 let activeProfileUid = null;
 window.showProfile = async (uid) => {
     activeProfileUid = uid;
@@ -867,7 +884,6 @@ function renderPostCard(postId, post, ownerUid, containerEl, canDelete) {
     containerEl.appendChild(div);
 }
 
-// EXPORT POST AS IMAGE (Ignoring elements with .no-export class)
 window.exportPostAsImage = (elementId) => {
     const cardEl = document.getElementById(elementId);
     if (!cardEl || typeof html2canvas === 'undefined') {
@@ -935,7 +951,6 @@ window.togglePostVote = async (postOwnerUid, postId, type) => {
     await updateDoc(globalRef, updates).catch(() => {});
 };
 
-// --- GLOBAL FEED RANKING & TAG FILTERING ---
 window.filterByTag = (tag) => {
     activeTagFilter = tag.toLowerCase();
     switchView('feed');
@@ -1031,7 +1046,6 @@ if (feedSearchInput) {
     };
 }
 
-// --- STICKY NOTE BULLETIN BOARD LOGIC ---
 window.setStickyColor = (color) => {
     currentStickyColor = color;
     ['yellow', 'pink', 'blue', 'green'].forEach(c => {
@@ -1108,13 +1122,10 @@ function loadStickyNotes() {
 
 window.deleteStickyNote = async (id) => {
     if (confirm("Take down this sticky note?")) {
-        try {
-            await deleteDoc(doc(db, "sticky_board", id));
-        } catch(e) { console.error("Delete sticky error:", e); }
+        try { await deleteDoc(doc(db, "sticky_board", id)); } catch(e) { console.error("Delete sticky error:", e); }
     }
 };
 
-// --- ARCADE & PUZZLES LOGIC ---
 const puzzleModal = document.getElementById('puzzle-modal');
 document.getElementById('btn-open-puzzle-creator').onclick = () => puzzleModal.classList.remove('hidden');
 document.getElementById('puzzle-close').onclick = () => puzzleModal.classList.add('hidden');
@@ -1187,7 +1198,6 @@ function runPuzzleSnippet(title, htmlCode) {
     iframe.srcdoc = htmlCode;
 }
 
-// --- DIRECT MESSAGING LOGIC ---
 let activeDmId = null;
 let activeDmTargetId = null;
 let activeDmTargetUser = null;
@@ -1374,7 +1384,6 @@ dmSendBtn.onclick = async () => {
 const updateDmInput = () => { if(userProfile?.role === 'guest') return; dmSendBtn.disabled = !dmInput.value.trim(); dmInput.style.height = 'auto'; dmInput.style.height = Math.min(dmInput.scrollHeight, 120) + 'px'; };
 dmInput.addEventListener('input', updateDmInput);
 
-// --- STORAGE GUARDIAN & ADMIN SYSTEM ---
 const adminModal = document.getElementById('admin-modal');
 UI.adminBtn.onclick = async () => {
     adminModal.classList.remove('hidden');
