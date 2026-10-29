@@ -46,8 +46,8 @@ let settings = {
     fullScreen: localStorage.getItem('pensup_fullscreen') === 'true'
 };
 
-// --- DYNAMIC SEO META TAG INJECTOR ---
-function updateSEO({ title, description, image, url }) {
+// --- DYNAMIC SEO META TAG & STRUCTURED DATA INJECTOR ---
+function updateSEO({ title, description, image, url, authorName, datePublished }) {
     if (title) {
         document.title = `${title} | PensUp Pro`;
         document.getElementById('og-title')?.setAttribute('content', title);
@@ -62,46 +62,35 @@ function updateSEO({ title, description, image, url }) {
     if (image) {
         document.getElementById('og-image')?.setAttribute('content', image);
     }
-}
 
-// --- DYNAMIC ROUTER & DEEP LINK SCROLLER ---
-async function handleUrlRouting() {
-    const params = new URLSearchParams(window.location.search);
-    const postId = params.get('post');
-    const puzzleId = params.get('puzzle');
-    const profileUid = params.get('profile');
-
-    if (postId) {
-        try {
-            const postSnap = await getDoc(doc(db, "global_posts", postId));
-            if (postSnap.exists()) {
-                const data = postSnap.data();
-                updateSEO({
-                    title: `Discussion by @${data.authorName}: "${data.text.substring(0, 30)}..."`,
-                    description: data.text || "Check out this handwritten note on PensUp Pro!",
-                    image: data.doodleImage || "https://anointo-1.github.io/pensUp/PensUp.jpg"
-                });
-                switchView('feed');
-                loadGlobalFeed(postId);
-            }
-        } catch (e) { console.warn("Router post fetch error:", e); }
-    } else if (puzzleId) {
-        try {
-            const puzzleSnap = await getDoc(doc(db, "puzzles", puzzleId));
-            if (puzzleSnap.exists()) {
-                const data = puzzleSnap.data();
-                updateSEO({
-                    title: `Play Arcade Game: ${data.title}`,
-                    description: `Play and run ${data.title} inside the PensUp Arcade!`
-                });
-                switchView('arcade');
-                runPuzzleSnippet(data.title, data.code);
-            }
-        } catch (e) { console.warn("Router puzzle fetch error:", e); }
-    } else if (profileUid) {
-        showProfile(profileUid);
+    // --- GOOGLE SEARCH CONSOLE JSON-LD STRUCTURED DATA ---
+    let ldScript = document.getElementById('dynamic-schema');
+    if (!ldScript) {
+        ldScript = document.createElement('script');
+        ldScript.id = 'dynamic-schema';
+        ldScript.type = 'application/ld+json';
+        document.head.appendChild(ldScript);
     }
+
+    const currentUrl = url || window.location.href;
+    const schemaData = {
+        "@context": "https://schema.org",
+        "@type": "DiscussionForumPosting",
+        "headline": title || "PensUp Pro - Handwritten Study Notes & Community",
+        "text": description || "Handwritten notes, chat, and community discussions on PensUp Pro.",
+        "datePublished": datePublished || new Date().toISOString(),
+        "url": currentUrl,
+        "author": {
+            "@type": "Person",
+            "name": authorName || "PensUp Community",
+            "url": currentUrl
+        }
+    };
+    if (image) schemaData.image = image;
+
+    ldScript.textContent = JSON.stringify(schemaData);
 }
+
 
 function applySettings() {
     settings.chatBoxLift ? UI.footer.classList.add('mb-12') : UI.footer.classList.remove('mb-12');
