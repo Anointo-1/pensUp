@@ -24,13 +24,10 @@ let globalPostsCache = [];
 let activeTagFilter = null;
 let presenceInterval = null;
 
-// --- CREDIT MODE & FIRESTORE RATE GUARD VARIABLES ---
 let activeOnlineUsersCount = 1;
-let isCreditModeActive = false;
-let userReadCredits = 100;
-let userWriteCredits = 50;
-const DAILY_FREE_READ_LIMIT = 50000;
-const DAILY_FREE_WRITE_LIMIT = 20000;
+let isCreditModeActive = true; // Force credit mode active to protect quota limits
+let userReadCredits = 50;
+let userWriteCredits = 20;
 
 const ROOM_ID = "main-room";
 const SUPER_ADMINS = ['anoimazo1', 'anointo', 'amazo'];
@@ -54,7 +51,6 @@ let settings = {
     fullScreen: localStorage.getItem('pensup_fullscreen') === 'true'
 };
 
-// --- DYNAMIC SEO META TAG & STRUCTURED DATA INJECTOR ---
 function updateSEO({ title, description, image, url, authorName, datePublished }) {
     if (title) {
         document.title = `${title} | PensUp Pro`;
@@ -67,9 +63,7 @@ function updateSEO({ title, description, image, url, authorName, datePublished }
         document.getElementById('og-description')?.setAttribute('content', cleanDesc);
         document.getElementById('tw-description')?.setAttribute('content', cleanDesc);
     }
-    if (image) {
-        document.getElementById('og-image')?.setAttribute('content', image);
-    }
+    if (image) document.getElementById('og-image')?.setAttribute('content', image);
 
     let ldScript = document.getElementById('dynamic-schema');
     if (!ldScript) {
@@ -87,18 +81,12 @@ function updateSEO({ title, description, image, url, authorName, datePublished }
         "text": description || "Handwritten notes, chat, and community discussions on PensUp Pro.",
         "datePublished": datePublished || "2026-02-01T00:00:00Z",
         "url": currentUrl,
-        "author": {
-            "@type": "Person",
-            "name": authorName || "PensUp Community",
-            "url": currentUrl
-        }
+        "author": { "@type": "Person", "name": authorName || "PensUp Community", "url": currentUrl }
     };
     if (image) schemaData.image = image;
-
     ldScript.textContent = JSON.stringify(schemaData);
 }
 
-// --- DYNAMIC ROUTER & DEEP LINK SCROLLER ---
 async function handleUrlRouting() {
     const params = new URLSearchParams(window.location.search);
     const postId = params.get('post');
@@ -108,7 +96,6 @@ async function handleUrlRouting() {
     if (postId) {
         try {
             const postSnap = await getDoc(doc(db, "global_posts", postId));
-            trackReadCredit(1);
             if (postSnap.exists()) {
                 const data = postSnap.data();
                 updateSEO({
@@ -125,13 +112,9 @@ async function handleUrlRouting() {
     } else if (puzzleId) {
         try {
             const puzzleSnap = await getDoc(doc(db, "puzzles", puzzleId));
-            trackReadCredit(1);
             if (puzzleSnap.exists()) {
                 const data = puzzleSnap.data();
-                updateSEO({
-                    title: `Play Arcade Game: ${data.title}`,
-                    description: `Play and run ${data.title} inside the PensUp Arcade!`
-                });
+                updateSEO({ title: `Play Arcade Game: ${data.title}`, description: `Play and run ${data.title} inside the PensUp Arcade!` });
                 switchView('arcade');
                 runPuzzleSnippet(data.title, data.code);
             }
@@ -141,84 +124,31 @@ async function handleUrlRouting() {
     }
 }
 
-// --- FIRESTORE CREDIT & RATE GUARDIAN ENGINE ---
-function trackReadCredit(count = 1) {
-    if (isCreditModeActive) {
-        userReadCredits = Math.max(0, userReadCredits - count);
-        updateCreditBannerUI();
-    }
-}
-
-function trackWriteCredit(count = 1) {
-    if (isCreditModeActive) {
-        userWriteCredits = Math.max(0, userWriteCredits - count);
-        updateCreditBannerUI();
-    }
-}
-
 function updateCreditBannerUI() {
     const banner = document.getElementById('credit-mode-banner');
     const counter = document.getElementById('credit-counter');
-    if (isCreditModeActive) {
+    if (banner && counter) {
         banner.classList.remove('hidden');
-        counter.textContent = `Reads: ${userReadCredits} | Writes: ${userWriteCredits}`;
-    } else {
-        banner.classList.add('hidden');
+        counter.textContent = `Quota Active (Throttled)`;
     }
-}
-
-async function checkDatabaseUsageLimits() {
-    try {
-        const statsRef = doc(db, "app_settings", "usage_stats");
-        const snap = await getDoc(statsRef);
-        if (snap.exists()) {
-            const data = snap.data();
-            const todayReads = data.todayReads || 0;
-            const todayWrites = data.todayWrites || 0;
-
-            if (todayReads >= (DAILY_FREE_READ_LIMIT * 0.8) || todayWrites >= (DAILY_FREE_WRITE_LIMIT * 0.8)) {
-                isCreditModeActive = true;
-                const remainingReads = Math.max(0, DAILY_FREE_READ_LIMIT - todayReads);
-                const remainingWrites = Math.max(0, DAILY_FREE_WRITE_LIMIT - todayWrites);
-                userReadCredits = Math.floor(remainingReads / Math.max(1, activeOnlineUsersCount));
-                userWriteCredits = Math.floor(remainingWrites / Math.max(1, activeOnlineUsersCount));
-            } else {
-                isCreditModeActive = false;
-            }
-        } else {
-            isCreditModeActive = false;
-        }
-    } catch (e) { console.warn("Usage check note:", e); }
-    updateCreditBannerUI();
 }
 
 function applySettings() {
     settings.chatBoxLift ? UI.footer.classList.add('mb-12') : UI.footer.classList.remove('mb-12');
-    
     const dmFooter = document.getElementById('dm-chat-footer');
-    if (dmFooter) {
-        settings.chatBoxLiftDm ? dmFooter.classList.add('mb-12') : dmFooter.classList.remove('mb-12');
-    }
+    if (dmFooter) settings.chatBoxLiftDm ? dmFooter.classList.add('mb-12') : dmFooter.classList.remove('mb-12');
 
-    document.getElementById('setting-chatbox-lift').checked = settings.chatBoxLift;
-    if (document.getElementById('setting-chatbox-lift-dm')) {
-        document.getElementById('setting-chatbox-lift-dm').checked = settings.chatBoxLiftDm;
-    }
-    document.getElementById('setting-force-toast').checked = settings.forceToast;
-    if (document.getElementById('setting-dm-toast')) {
-        document.getElementById('setting-dm-toast').checked = settings.dmToast;
-    }
-    document.getElementById('setting-sound-enabled').checked = settings.soundEnabled;
-    document.getElementById('setting-fullscreen').checked = settings.fullScreen;
+    if (document.getElementById('setting-chatbox-lift')) document.getElementById('setting-chatbox-lift').checked = settings.chatBoxLift;
+    if (document.getElementById('setting-chatbox-lift-dm')) document.getElementById('setting-chatbox-lift-dm').checked = settings.chatBoxLiftDm;
+    if (document.getElementById('setting-force-toast')) document.getElementById('setting-force-toast').checked = settings.forceToast;
+    if (document.getElementById('setting-dm-toast')) document.getElementById('setting-dm-toast').checked = settings.dmToast;
+    if (document.getElementById('setting-sound-enabled')) document.getElementById('setting-sound-enabled').checked = settings.soundEnabled;
+    if (document.getElementById('setting-fullscreen')) document.getElementById('setting-fullscreen').checked = settings.fullScreen;
 
     if (settings.fullScreen) {
-        if (!document.fullscreenElement) {
-            document.documentElement.requestFullscreen().catch(e => console.warn("Fullscreen request blocked:", e));
-        }
+        if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(e => {});
     } else {
-        if (document.exitFullscreen && document.fullscreenElement) {
-            document.exitFullscreen().catch(e => console.warn("Exit fullscreen failed:", e));
-        }
+        if (document.exitFullscreen && document.fullscreenElement) document.exitFullscreen().catch(e => {});
     }
 }
 
@@ -242,7 +172,6 @@ function showToastNotification(senderName, text, type = 'chat') {
     const typeLabel = isDm ? '📫 Direct Message' : '📝 Main Chat';
     
     toast.className = `p-3 ${bgClass} text-slate-800 sketched-border shadow-2xl animate-pop flex flex-col min-w-[280px] max-w-[360px] pointer-events-auto relative -rotate-1 border-2 transition-all duration-300`;
-    
     let safeText = text.length > 50 ? escapeHTML(text.substring(0, 50)) + "..." : escapeHTML(text);
     
     toast.innerHTML = `
@@ -252,56 +181,32 @@ function showToastNotification(senderName, text, type = 'chat') {
         </div>
         <div class="text-lg leading-tight font-semibold text-slate-800 break-words">${safeText}</div>
     `;
-    
     container.appendChild(toast);
-    setTimeout(() => {
-        toast.style.opacity = '0';
-        toast.style.transform = 'translateY(-10px) scale(0.95)';
-        setTimeout(() => toast.remove(), 300);
-    }, 4000);
+    setTimeout(() => toast.remove(), 4000);
 }
 
 function notifyUser(senderName, text, type = 'chat') {
     if (type === 'dm' && !settings.dmToast) return;
-
-    if (!settings.forceToast && "Notification" in window && Notification.permission === "granted") {
-        try {
-            const title = type === 'dm' ? `PensUp 📫 DM from ${senderName}` : `PensUp 📝 Note from ${senderName}`;
-            const n = new Notification(title, { 
-                body: text.length > 60 ? text.substring(0, 60) + "..." : text, 
-                icon: "https://anointo-1.github.io/pensUp/PensUp.jpg"
-            });
-            n.onclick = () => { window.focus(); n.close(); }; 
-            return;
-        } catch (e) { console.warn("Native notify failed:", e); }
-    }
     showToastNotification(senderName, text, type);
 }
 
 function listenForNotifications(uid) {
     if (unsubNotifs) unsubNotifs();
     let isInitialNotifLoad = false;
-    
     unsubNotifs = onSnapshot(collection(db, `users/${uid}/notifications`), (snapshot) => {
-        if (!isInitialNotifLoad) {
-            isInitialNotifLoad = true;
-            return;
-        }
+        if (!isInitialNotifLoad) { isInitialNotifLoad = true; return; }
         snapshot.docChanges().forEach((change) => {
             if (change.type === "added") {
                 const data = change.doc.data();
-                if (data.type === 'dm') {
-                    notifyUser(data.senderName, data.text, 'dm');
-                }
-                deleteDoc(change.doc.ref).catch(e => console.warn("Notification cleanup error", e));
+                if (data.type === 'dm') notifyUser(data.senderName, data.text, 'dm');
+                deleteDoc(change.doc.ref).catch(e => {});
             }
         });
-    });
+    }, (err) => console.warn("Notif listener note:", err));
 }
 
 const escapeHTML = (str) => str ? String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;") : '';
 
-// --- IN-APP LINK PREVIEW TRIGGER ---
 window.openInAppWebLink = (url) => {
     const modal = document.getElementById('link-preview-modal');
     const iframe = document.getElementById('link-preview-iframe');
@@ -309,16 +214,11 @@ window.openInAppWebLink = (url) => {
     const urlText = document.getElementById('link-preview-url-text');
     const extBtn = document.getElementById('link-preview-external-btn');
 
-    if (!modal || !iframe) {
-        window.open(url, '_blank');
-        return;
-    }
-
+    if (!modal || !iframe) { window.open(url, '_blank'); return; }
     title.textContent = `Viewing Web Link`;
     urlText.textContent = url;
-    extBtn.href = url;
+    if(extBtn) extBtn.href = url;
     iframe.src = url;
-
     modal.classList.remove('hidden');
 };
 
@@ -331,7 +231,6 @@ document.getElementById('link-preview-close')?.addEventListener('click', () => {
 
 const parseTagsAndLinks = (rawText) => {
     let safeText = escapeHTML(rawText);
-
     if (linksEnabledGlobally) {
         safeText = safeText.replace(/(https?:\/\/[^\s]+)/g, (match) => {
             return `<span onclick="event.stopPropagation(); openInAppWebLink('${match}')" class="text-blue-600 underline font-semibold hover:text-blue-800 break-all cursor-pointer inline-block">${match}</span>`;
@@ -339,13 +238,10 @@ const parseTagsAndLinks = (rawText) => {
     } else {
         safeText = safeText.replace(/(https?:\/\/[^\s]+)/g, '<span class="italic text-slate-400 bg-slate-100 px-1 rounded">[Link Disabled by Admin]</span>');
     }
-
     safeText = safeText.replace(/#([a-zA-Z][\w\-]*)/g, '<span onclick="event.stopPropagation(); filterByTag(\'$1\')" class="text-indigo-600 font-bold bg-indigo-50 px-1.5 py-0.5 rounded sketched-border-alt cursor-pointer hover:bg-indigo-100">#$1</span>');
-
     return safeText;
 };
 
-// --- EXTRACT HASHTAGS FOR HORIZONTAL BAR ---
 function extractTagsFromText(text) {
     if (!text) return [];
     const matches = text.match(/#([a-zA-Z][\w\-]*)/g);
@@ -357,11 +253,7 @@ const showError = (msg) => { UI.err.textContent = msg; UI.err.classList.remove('
 const setTimeGreeting = () => { const hr = new Date().getHours(); document.getElementById('greeting-text').textContent = hr < 12 ? 'Good Morning!' : hr < 18 ? 'Good Afternoon!' : 'Good Evening!'; };
 
 UI.themeSel.onchange = (e) => document.body.className = `h-screen w-full flex flex-col relative overflow-hidden text-lg select-none ${e.target.value}`;
-const currentMonth = new Date().getMonth();
-if (currentMonth === 9) { UI.themeSel.value = 'theme-halloween'; UI.themeSel.dispatchEvent(new Event('change')); }
-else if (currentMonth === 11) { UI.themeSel.value = 'theme-xmas'; UI.themeSel.dispatchEvent(new Event('change')); }
 
-// Guest Login
 document.getElementById('btn-guest').onclick = async () => {
     document.getElementById('auth-loading').classList.remove('hidden');
     try {
@@ -370,10 +262,9 @@ document.getElementById('btn-guest').onclick = async () => {
         await setDoc(doc(db, "users", cred.user.uid), { 
             username: guestName, role: 'guest', suspended: false, emoji: '👀', bio: 'Browsing as guest', following: [], lastActive: serverTimestamp() 
         }, { merge: true });
-        trackWriteCredit(1);
     } catch (e) {
         document.getElementById('auth-loading').classList.add('hidden');
-        showError("Guest login failed (Ensure Anonymous auth is enabled in Firebase console): " + e.message);
+        showError("Guest login failed: " + e.message);
     }
 };
 
@@ -385,13 +276,11 @@ document.getElementById('btn-register').onclick = async () => {
     isRegistering = true; 
     try {
         const usernameDoc = await getDoc(doc(db, "usernames", u));
-        trackReadCredit(1);
         if (usernameDoc.exists()) { isRegistering = false; document.getElementById('auth-loading').classList.add('hidden'); return showError("Username is already taken."); }
         const cred = await createUserWithEmailAndPassword(auth, `${u}@notebook.local`, p);
         const role = SUPER_ADMINS.includes(u) ? 'super_admin' : 'user';
         await setDoc(doc(db, "usernames", u), { uid: cred.user.uid });
         await setDoc(doc(db, "users", cred.user.uid), { username: u, role: role, suspended: false, emoji: '👤', bio: '', following: [], lastActive: serverTimestamp() });
-        trackWriteCredit(2);
         isRegistering = false; syncUserProfile(cred.user);
     } catch (e) { isRegistering = false; document.getElementById('auth-loading').classList.add('hidden'); showError(e.message); }
 };
@@ -411,25 +300,18 @@ document.getElementById('btn-logout-launch').onclick = async () => {
     if (unsubPresence) { unsubPresence(); unsubPresence = null; }
     if (unsubNotifs) { unsubNotifs(); unsubNotifs = null; }
     if (userDocUnsub) { userDocUnsub(); userDocUnsub = null; }
-    currentUser = null;
-    userProfile = null;
-    try { await signOut(auth); } catch (e) { console.warn("Sign out note:", e); }
+    currentUser = null; userProfile = null;
+    try { await signOut(auth); } catch (e) {}
 };
 
-// --- FASTER PRESENCE HEARTBEAT (10-second updates for online count) ---
 function startPresenceHeartbeat(uid) {
     if (presenceInterval) clearInterval(presenceInterval);
-    
     const updatePresence = async () => {
         if (!currentUser || !uid) return;
-        try { 
-            await updateDoc(doc(db, "users", uid), { lastActive: serverTimestamp() }); 
-            trackWriteCredit(1);
-        } catch (e) { console.warn("Presence heartbeat note:", e); }
+        try { await updateDoc(doc(db, "users", uid), { lastActive: serverTimestamp() }); } catch (e) {}
     };
-    
     updatePresence();
-    presenceInterval = setInterval(updatePresence, 10000);
+    presenceInterval = setInterval(updatePresence, 20000);
 
     if (unsubPresence) unsubPresence();
     unsubPresence = onSnapshot(collection(db, "users"), (snapshot) => {
@@ -439,14 +321,12 @@ function startPresenceHeartbeat(uid) {
             const data = docSnap.data();
             if (data.lastActive) {
                 const lastTime = data.lastActive.toDate ? data.lastActive.toDate().getTime() : 0;
-                if ((now - lastTime) < 25000) activeCount++;
+                if ((now - lastTime) < 30000) activeCount++;
             }
         });
-        activeOnlineUsersCount = Math.max(1, activeCount);
         const badge = document.getElementById('online-counter-badge');
-        if (badge) badge.textContent = `🟢 ${activeOnlineUsersCount} online`;
-        checkDatabaseUsageLimits();
-    });
+        if (badge) badge.textContent = `🟢 ${Math.max(1, activeCount)} online`;
+    }, (err) => {});
 }
 
 function syncUserProfile(user) {
@@ -460,7 +340,6 @@ function syncUserProfile(user) {
                 showError(docSnap.data()?.suspended ? "Account suspended." : "Account missing."); 
                 return; 
             }
-            
             const wasNull = !currentUser;
             userProfile = docSnap.data(); 
             if (!userProfile.following) userProfile.following = [];
@@ -468,10 +347,7 @@ function syncUserProfile(user) {
             
             document.getElementById('auth-loading').classList.add('hidden');
             UI.auth.classList.add('hidden'); 
-            
-            if (wasNull && UI.app.classList.contains('hidden')) {
-                UI.launch.classList.remove('hidden');
-            }
+            if (wasNull && UI.app.classList.contains('hidden')) UI.launch.classList.remove('hidden');
 
             setTimeGreeting();
             document.getElementById('launch-username').textContent = userProfile.username;
@@ -479,8 +355,7 @@ function syncUserProfile(user) {
             document.getElementById('launch-bio').value = userProfile.bio || '';
             document.getElementById('user-badge').textContent = `${userProfile.emoji || '👤'} My Profile`;
             
-            const isGuest = userProfile.role === 'guest';
-            if (isGuest) {
+            if (userProfile.role === 'guest') {
                 document.getElementById('launch-bio').disabled = true;
                 document.getElementById('btn-open-emoji-picker').disabled = true;
             }
@@ -497,22 +372,9 @@ function syncUserProfile(user) {
             listenForNotifications(user.uid);
             startPresenceHeartbeat(user.uid);
             handleUrlRouting();
-
-            onSnapshot(doc(db, "app_settings", "launch_screen"), (d) => { 
-                document.getElementById('launch-board-text').textContent = d.exists() ? d.data().text : "Welcome to the study group!"; 
-            });
-            onSnapshot(doc(db, "app_settings", "global_settings"), (d) => { 
-                if (d.exists()) {
-                    const data = d.data();
-                    linksEnabledGlobally = (data.linksEnabled !== false);
-                    if (data.forceCreditMode !== undefined) isCreditModeActive = data.forceCreditMode;
-                }
-                const linkBtn = document.getElementById('btn-toggle-global-links');
-                if(linkBtn) linkBtn.className = linksEnabledGlobally ? "px-3 py-1 font-bold text-white bg-emerald-500 rounded sketched-border" : "px-3 py-1 font-bold text-white bg-rose-500 rounded sketched-border";
-                if(linkBtn) linkBtn.textContent = linksEnabledGlobally ? "Links: ON" : "Links: OFF";
-            });
+            updateCreditBannerUI();
         }, 
-        (error) => { document.getElementById('auth-loading').classList.add('hidden'); console.warn("User sync auth note:", error); }
+        (error) => { document.getElementById('auth-loading').classList.add('hidden'); }
     );
 }
 
@@ -573,32 +435,39 @@ ALL_EMOJIS.forEach(e => {
     const btn = document.createElement('button'); btn.className = "hover:scale-125 transition-transform p-1 cursor-pointer";
     btn.textContent = e; btn.onclick = () => selectEmoji(e); emojiGrid.appendChild(btn);
 });
-document.getElementById('btn-open-emoji-picker').onclick = () => {
+document.getElementById('btn-open-emoji-picker')?.addEventListener('click', () => {
     if (userProfile?.role === 'guest') return alert("Guests cannot change profile emoji.");
     emojiModal.classList.remove('hidden');
-};
-document.getElementById('emoji-close').onclick = () => emojiModal.classList.add('hidden');
+});
+document.getElementById('emoji-close')?.addEventListener('click', () => emojiModal.classList.add('hidden'));
+
 async function selectEmoji(selectedEmoji) {
     if(!selectedEmoji) return;
     document.getElementById('btn-open-emoji-picker').textContent = selectedEmoji;
     userProfile.emoji = selectedEmoji; emojiModal.classList.add('hidden');
     await updateDoc(doc(db, "users", currentUser.uid), { emoji: selectedEmoji });
-    trackWriteCredit(1);
 }
-document.getElementById('btn-save-custom-emoji').onclick = () => { const custom = document.getElementById('custom-emoji-input').value.trim(); if (custom) selectEmoji(custom); };
 
-document.getElementById('launch-bio').onblur = async (e) => {
+document.getElementById('btn-save-custom-emoji')?.addEventListener('click', () => { 
+    const custom = document.getElementById('custom-emoji-input').value.trim(); 
+    if (custom) selectEmoji(custom); 
+});
+
+document.getElementById('launch-bio')?.addEventListener('blur', async (e) => {
     if (userProfile?.role === 'guest') return;
     userProfile.bio = e.target.value.trim(); 
     await updateDoc(doc(db, "users", currentUser.uid), { bio: userProfile.bio }); 
-    trackWriteCredit(1);
-};
-document.getElementById('btn-edit-board').onclick = async () => { const txt = prompt("New notice board text:"); if(txt !== null) await setDoc(doc(db, "app_settings", "launch_screen"), { text: txt }); };
+});
+
+document.getElementById('btn-edit-board')?.addEventListener('click', async () => { 
+    const txt = prompt("New notice board text:"); 
+    if(txt !== null) await setDoc(doc(db, "app_settings", "launch_screen"), { text: txt }); 
+});
 
 const settingsModal = document.getElementById('settings-modal');
-document.getElementById('btn-settings').onclick = () => { applySettings(); settingsModal.classList.remove('hidden'); };
-document.getElementById('settings-close').onclick = () => settingsModal.classList.add('hidden');
-document.getElementById('btn-save-settings').onclick = () => {
+document.getElementById('btn-settings')?.addEventListener('click', () => { applySettings(); settingsModal.classList.remove('hidden'); });
+document.getElementById('settings-close')?.addEventListener('click', () => settingsModal.classList.add('hidden'));
+document.getElementById('btn-save-settings')?.addEventListener('click', () => {
     settings.chatBoxLift = document.getElementById('setting-chatbox-lift').checked;
     settings.chatBoxLiftDm = document.getElementById('setting-chatbox-lift-dm').checked;
     settings.forceToast = document.getElementById('setting-force-toast').checked;
@@ -614,7 +483,7 @@ document.getElementById('btn-save-settings').onclick = () => {
     localStorage.setItem('pensup_fullscreen', settings.fullScreen);
 
     applySettings(); settingsModal.classList.add('hidden');
-};
+});
 
 document.getElementById('btn-enter-chat').onclick = () => {
     UI.launch.classList.add('hidden'); UI.app.classList.replace('hidden', 'flex');
@@ -623,7 +492,6 @@ document.getElementById('btn-enter-chat').onclick = () => {
         UI.input.disabled = true;
         UI.sendBtn.disabled = true;
     }
-    if (!settings.forceToast && "Notification" in window && Notification.permission === "default") Notification.requestPermission();
     applySettings(); loadMessages();
 };
 document.getElementById('btn-back-launch').onclick = () => { UI.app.classList.replace('flex', 'hidden'); UI.launch.classList.remove('hidden'); if(unsubMsg) unsubMsg(); };
@@ -631,11 +499,8 @@ document.getElementById('user-badge').onclick = () => { if(currentUser) showProf
 
 function loadMessages() {
     if (unsubMsg) unsubMsg(); isInitialLoadDone = false;
-    const itemLimit = isCreditModeActive ? 25 : 60;
-
-    unsubMsg = onSnapshot(query(collection(db, `rooms/${ROOM_ID}/messages`), orderBy("createdAt", "asc"), limit(itemLimit)), 
+    unsubMsg = onSnapshot(query(collection(db, `rooms/${ROOM_ID}/messages`), orderBy("createdAt", "asc"), limit(25)), 
         (snapshot) => {
-            trackReadCredit(snapshot.docs.length);
             document.getElementById('chat-loading').classList.add('hidden'); UI.msgContainer.innerHTML = '';
             const pinnedList = [];
             snapshot.forEach(docSnap => {
@@ -651,12 +516,13 @@ function loadMessages() {
                 });
             }
             isInitialLoadDone = true;
-        }, (error) => { document.getElementById('chat-loading').classList.add('hidden'); console.error("Chat Error", error); }
+        }, (error) => { document.getElementById('chat-loading').classList.add('hidden'); console.warn("Chat quota note:", error); }
     );
 }
 
 function renderPinnedSection(pinnedList) {
     const banner = document.getElementById('pinned-banner'), container = document.getElementById('pinned-notes-list'), countLabel = document.getElementById('pinned-count');
+    if(!countLabel) return;
     countLabel.textContent = pinnedList.length;
     if (pinnedList.length === 0) { banner.classList.add('hidden'); return; }
     banner.classList.remove('hidden'); container.innerHTML = '';
@@ -668,10 +534,10 @@ function renderPinnedSection(pinnedList) {
     });
 }
 
-document.getElementById('btn-toggle-pinned-list').onclick = (e) => {
+document.getElementById('btn-toggle-pinned-list')?.addEventListener('click', (e) => {
     const list = document.getElementById('pinned-notes-list');
     list.classList.toggle('hidden'); e.target.textContent = list.classList.contains('hidden') ? "Expand ▼" : "Collapse ▲";
-};
+});
 
 window.jumpToMessage = (id) => {
     const el = document.getElementById(`msg-${id}`);
@@ -680,22 +546,19 @@ window.jumpToMessage = (id) => {
 
 window.togglePin = async (id, shouldPin) => {
     if (!userProfile || userProfile.role !== 'super_admin') return;
-    if (shouldPin && currentPinnedCount >= 5) return alert("Maximum 5 notes can be pinned! Unpin one first.");
-    try { await updateDoc(doc(db, `rooms/${ROOM_ID}/messages`, id), { isPinned: shouldPin }); trackWriteCredit(1); } catch (e) { console.error("Pin error:", e); }
+    try { await updateDoc(doc(db, `rooms/${ROOM_ID}/messages`, id), { isPinned: shouldPin }); } catch (e) {}
 };
 
 async function sendMessage(text) {
     if (!currentUser || (userProfile && userProfile.suspended) || (userProfile && userProfile.role === 'guest')) return;
-    if (isCreditModeActive && userWriteCredits <= 0) return alert("Write quota depleted for Credit Mode. Please wait a moment.");
     try {
-        if (settings.soundEnabled) { writeSound.currentTime = 0; writeSound.play().catch(e => console.warn("Audio blocked:", e)); }
+        if (settings.soundEnabled) { writeSound.currentTime = 0; writeSound.play().catch(e => {}); }
         await addDoc(collection(db, `rooms/${ROOM_ID}/messages`), {
             senderId: currentUser.uid, senderName: userProfile.username, senderEmoji: userProfile.emoji || '👤',
             text: text, createdAt: serverTimestamp(), isDeleted: false, isPinned: false
         });
-        trackWriteCredit(1);
         UI.input.value = ''; updateInput();
-    } catch (e) { console.error("Send error:", e); }
+    } catch (e) { alert("Message send failed due to quota limit."); }
 }
 
 UI.sendBtn.onclick = () => { if (UI.input.value.trim()) sendMessage(UI.input.value.trim()); };
@@ -703,27 +566,21 @@ const updateInput = () => { if(userProfile?.role === 'guest') return; UI.sendBtn
 UI.input.addEventListener('input', updateInput);
 
 window.deleteMsg = async (roomId, msgId) => { 
-    if(confirm("Rip out this note?")) { 
-        await updateDoc(doc(db, `rooms/${roomId}/messages`, msgId), { isDeleted: true, deletedBy: userProfile.username, text: "", isPinned: false }); 
-        trackWriteCredit(1);
-    }
+    if(confirm("Rip out this note?")) { await updateDoc(doc(db, `rooms/${roomId}/messages`, msgId), { isDeleted: true, deletedBy: userProfile.username, text: "", isPinned: false }); }
 };
 
-// --- RENDER MESSAGE WITH TRUNCATION & TAG BAR ---
 window.toggleExpandMessage = (msgId) => {
     const fullEl = document.getElementById(`msg-full-${msgId}`);
     const truncEl = document.getElementById(`msg-trunc-${msgId}`);
     const tagBarEl = document.getElementById(`msg-tagbar-${msgId}`);
     const btnEl = document.getElementById(`msg-expand-btn-${msgId}`);
-
+    if (!fullEl) return;
     if (fullEl.classList.contains('hidden')) {
-        fullEl.classList.remove('hidden');
-        truncEl.classList.add('hidden');
+        fullEl.classList.remove('hidden'); truncEl.classList.add('hidden');
         if (tagBarEl) tagBarEl.classList.add('hidden');
         btnEl.textContent = 'Show Less ▲';
     } else {
-        fullEl.classList.add('hidden');
-        truncEl.classList.remove('hidden');
+        fullEl.classList.add('hidden'); truncEl.classList.remove('hidden');
         if (tagBarEl) tagBarEl.classList.remove('hidden');
         btnEl.textContent = 'Show More ▼';
     }
@@ -736,9 +593,7 @@ function renderMessage(id, data, containerEl, roomStr) {
     const timeStr = data.createdAt ? data.createdAt.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '...';
     
     let bgClass = isSelf ? 'bg-yellow-100' : 'bg-white';
-    if (roomStr.startsWith('dm_')) {
-        bgClass = isSelf ? 'bg-blue-100 border-blue-300' : 'bg-white border-amber-200';
-    }
+    if (roomStr.startsWith('dm_')) bgClass = isSelf ? 'bg-blue-100 border-blue-300' : 'bg-white border-amber-200';
     
     let contentHtml = '';
     const textRaw = data.text || '';
@@ -765,17 +620,15 @@ function renderMessage(id, data, containerEl, roomStr) {
         contentHtml = parseTagsAndLinks(textRaw);
     }
 
-    const pinBtn = (roomStr === ROOM_ID && isSuperAdmin && !data.isDeleted) ? `<button onclick="togglePin('${id}', ${!data.isPinned})" class="bg-amber-100 text-amber-800 rounded-full w-6 h-6 text-xs flex items-center justify-center hover:scale-110 sketched-border" title="${data.isPinned ? 'Unpin' : 'Pin'}">📌</button>` : '';
-    const delBtn = (canDelete && !data.isDeleted) ? `<button onclick="deleteMsg('${roomStr}', '${id}')" class="bg-rose-200 text-rose-700 rounded-full w-6 h-6 text-xs flex items-center justify-center hover:scale-110 sketched-border" title="Delete">✖</button>` : '';
+    const pinBtn = (roomStr === ROOM_ID && isSuperAdmin && !data.isDeleted) ? `<button onclick="togglePin('${id}', ${!data.isPinned})" class="bg-amber-100 text-amber-800 rounded-full w-6 h-6 text-xs flex items-center justify-center hover:scale-110 sketched-border">📌</button>` : '';
+    const delBtn = (canDelete && !data.isDeleted) ? `<button onclick="deleteMsg('${roomStr}', '${id}')" class="bg-rose-200 text-rose-700 rounded-full w-6 h-6 text-xs flex items-center justify-center hover:scale-110 sketched-border">✖</button>` : '';
     const actionControls = (!data.isDeleted && (pinBtn || delBtn)) ? `<div class="absolute -right-2 -top-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">${pinBtn}${delBtn}</div>` : '';
     const pinnedBadge = data.isPinned ? `<span class="text-xs bg-amber-200 text-amber-900 font-bold px-1.5 py-0.5 rounded sketched-border-alt mb-1 inline-block">📌 Pinned</span>` : '';
     const header = (!isSelf && roomStr === ROOM_ID) ? `<div class="flex items-center gap-1 mb-1 cursor-pointer hover:opacity-80" onclick="showProfile('${data.senderId}')"><span class="text-2xl">${escapeHTML(data.senderEmoji || '👤')}</span><span class="text-sm font-bold text-indigo-500 pl-1">${escapeHTML(data.senderName)}</span></div>` : '';
 
-    const marginIndentClass = !isSelf ? 'ml-10 sm:ml-12' : '';
-
     const wrapper = document.createElement('div');
     wrapper.id = `msg-${id}`; 
-    wrapper.className = `group flex flex-col gap-1 max-w-[85%] animate-pop relative transition-all duration-300 ${isSelf ? 'self-end items-end' : 'self-start items-start ' + marginIndentClass}`;
+    wrapper.className = `group flex flex-col gap-1 max-w-[85%] animate-pop relative transition-all duration-300 ${isSelf ? 'self-end items-end' : 'self-start items-start ml-10 sm:ml-12'}`;
     wrapper.innerHTML = `${header}${pinnedBadge}<div class="${bgClass} text-slate-800 p-2.5 text-2xl sketched-border relative break-words shadow-xs">${contentHtml} ${actionControls}</div><span class="text-xs font-bold opacity-60 px-1 mt-0.5">${timeStr}</span>`;
     containerEl.appendChild(wrapper);
 }
@@ -784,19 +637,9 @@ function calculateUserBadges(userData, postCount = 0) {
     const badges = [];
     const role = userData.role || 'user';
     const followers = userData.followersCount || 0;
-
-    if (['super_admin', 'admin'].includes(role)) {
-        badges.push({ title: "👑 Notebook Admin", bg: "bg-amber-200 text-amber-900 border-amber-400" });
-    }
-    if (postCount >= 5) {
-        badges.push({ title: "✍️ Active Scribbler", bg: "bg-indigo-100 text-indigo-800 border-indigo-300" });
-    }
-    if (followers >= 3) {
-        badges.push({ title: "🌟 Popular Note", bg: "bg-emerald-100 text-emerald-800 border-emerald-300" });
-    }
-    if (userData.following && userData.following.length >= 5) {
-        badges.push({ title: "🤝 Study Buddy", bg: "bg-blue-100 text-blue-800 border-blue-300" });
-    }
+    if (['super_admin', 'admin'].includes(role)) badges.push({ title: "👑 Notebook Admin", bg: "bg-amber-200 text-amber-900 border-amber-400" });
+    if (postCount >= 5) badges.push({ title: "✍️ Active Scribbler", bg: "bg-indigo-100 text-indigo-800 border-indigo-300" });
+    if (followers >= 3) badges.push({ title: "🌟 Popular Note", bg: "bg-emerald-100 text-emerald-800 border-emerald-300" });
     return badges;
 }
 
@@ -804,84 +647,58 @@ window.toggleFollow = async (targetUid) => {
     if (!currentUser || currentUser.uid === targetUid || (userProfile && userProfile.role === 'guest')) return;
     const isFollowing = (userProfile.following || []).includes(targetUid);
     const userRef = doc(db, "users", currentUser.uid);
-
     try {
-        if (isFollowing) {
-            await updateDoc(userRef, { following: arrayRemove(targetUid) });
-        } else {
-            await updateDoc(userRef, { following: arrayUnion(targetUid) });
-        }
-        trackWriteCredit(1);
+        if (isFollowing) await updateDoc(userRef, { following: arrayRemove(targetUid) });
+        else await updateDoc(userRef, { following: arrayUnion(targetUid) });
         if (activeProfileUid) showProfile(activeProfileUid);
-        if (!dmDirModal.classList.contains('hidden')) renderUserDirectory(allUsersCache);
-    } catch(e) { console.error("Follow error:", e); }
+    } catch(e) {}
 };
 
 const doodleModal = document.getElementById('doodle-modal');
 const doodleCanvas = document.getElementById('doodle-canvas');
-const ctx = doodleCanvas.getContext('2d');
+const ctx = doodleCanvas?.getContext('2d');
 let isDrawing = false;
 
-document.getElementById('btn-open-doodle-modal').onclick = () => {
+document.getElementById('btn-open-doodle-modal')?.addEventListener('click', () => {
     if (userProfile?.role === 'guest') return alert("Guests cannot sketch doodles.");
-    openDoodleModal();
-};
-document.getElementById('doodle-close').onclick = () => doodleModal.classList.add('hidden');
-
-function openDoodleModal() {
     doodleModal.classList.remove('hidden');
-    ctx.strokeStyle = '#334155';
-    ctx.lineWidth = 3;
-    ctx.lineCap = 'round';
-    if (!attachedDoodleBase64) clearDoodle();
-}
+    if(ctx) ctx.strokeStyle = '#334155', ctx.lineWidth = 3, ctx.lineCap = 'round';
+    if (!attachedDoodleBase64 && ctx) ctx.clearRect(0, 0, doodleCanvas.width, doodleCanvas.height);
+});
+document.getElementById('doodle-close')?.addEventListener('click', () => doodleModal.classList.add('hidden'));
 
-function clearDoodle() {
-    ctx.clearRect(0, 0, doodleCanvas.width, doodleCanvas.height);
-}
-document.getElementById('btn-clear-doodle').onclick = clearDoodle;
+document.getElementById('btn-clear-doodle')?.addEventListener('click', () => {
+    if(ctx) ctx.clearRect(0, 0, doodleCanvas.width, doodleCanvas.height);
+});
 
 const getPos = (e) => {
     const rect = doodleCanvas.getBoundingClientRect();
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    const scaleX = doodleCanvas.width / rect.width;
-    const scaleY = doodleCanvas.height / rect.height;
-    return { 
-        x: (clientX - rect.left) * scaleX, 
-        y: (clientY - rect.top) * scaleY 
+    return { x: (clientX - rect.left) * (doodleCanvas.width / rect.width), y: (clientY - rect.top) * (doodleCanvas.height / rect.height) };
+};
+
+if(doodleCanvas) {
+    doodleCanvas.onmousedown = doodleCanvas.ontouchstart = (e) => {
+        isDrawing = true; const pos = getPos(e); ctx.beginPath(); ctx.moveTo(pos.x, pos.y); e.preventDefault();
     };
-};
+    doodleCanvas.onmousemove = doodleCanvas.ontouchmove = (e) => {
+        if (!isDrawing) return; const pos = getPos(e); ctx.lineTo(pos.x, pos.y); ctx.stroke(); e.preventDefault();
+    };
+    window.onmouseup = window.ontouchend = () => { isDrawing = false; };
+}
 
-doodleCanvas.onmousedown = doodleCanvas.ontouchstart = (e) => {
-    isDrawing = true;
-    const pos = getPos(e);
-    ctx.beginPath();
-    ctx.moveTo(pos.x, pos.y);
-    e.preventDefault();
-};
-
-doodleCanvas.onmousemove = doodleCanvas.ontouchmove = (e) => {
-    if (!isDrawing) return;
-    const pos = getPos(e);
-    ctx.lineTo(pos.x, pos.y);
-    ctx.stroke();
-    e.preventDefault();
-};
-
-window.onmouseup = window.ontouchend = () => { isDrawing = false; };
-
-document.getElementById('btn-attach-doodle').onclick = () => {
+document.getElementById('btn-attach-doodle')?.addEventListener('click', () => {
     attachedDoodleBase64 = doodleCanvas.toDataURL('image/png');
     document.getElementById('post-doodle-preview').src = attachedDoodleBase64;
     document.getElementById('post-doodle-preview-container').classList.remove('hidden');
     doodleModal.classList.add('hidden');
-};
+});
 
-document.getElementById('btn-remove-doodle').onclick = () => {
+document.getElementById('btn-remove-doodle')?.addEventListener('click', () => {
     attachedDoodleBase64 = null;
     document.getElementById('post-doodle-preview-container').classList.add('hidden');
-};
+});
 
 let activeProfileUid = null;
 window.showProfile = async (uid) => {
@@ -897,33 +714,24 @@ window.showProfile = async (uid) => {
     const deleteAccountBox = document.getElementById('delete-account-container');
     
     if(currentUser && uid === currentUser.uid && userProfile?.role !== 'guest') {
-        dmBtn.classList.add('hidden');
-        followBtn.classList.add('hidden');
-        createBox.classList.remove('hidden');
-        deleteAccountBox.classList.remove('hidden');
+        dmBtn.classList.add('hidden'); followBtn.classList.add('hidden');
+        createBox.classList.remove('hidden'); deleteAccountBox.classList.remove('hidden');
     } else {
         if(userProfile?.role !== 'guest' && currentUser) dmBtn.classList.remove('hidden');
         else dmBtn.classList.add('hidden');
-
         if(userProfile?.role !== 'guest' && currentUser) followBtn.classList.remove('hidden');
         else followBtn.classList.add('hidden');
-
-        createBox.classList.add('hidden');
-        deleteAccountBox.classList.add('hidden');
+        createBox.classList.add('hidden'); deleteAccountBox.classList.add('hidden');
         
         if (currentUser) {
             const isFollowing = (userProfile.following || []).includes(uid);
             followBtn.textContent = isFollowing ? "⭐ Following" : "+ Follow";
-            followBtn.className = isFollowing 
-                ? "text-xs font-bold px-3 py-1 bg-emerald-500 text-white rounded sketched-border hover:bg-emerald-600 transition-transform" 
-                : "text-xs font-bold px-3 py-1 bg-amber-400 text-amber-950 rounded sketched-border hover:bg-amber-500 transition-transform";
             followBtn.onclick = () => toggleFollow(uid);
         }
     }
 
     try {
         const snap = await getDoc(doc(db, "users", uid));
-        trackReadCredit(1);
         if(snap.exists()) {
             const p = snap.data();
             document.getElementById('p-modal-emoji').textContent = p.emoji || '👤';
@@ -931,106 +739,70 @@ window.showProfile = async (uid) => {
             document.getElementById('p-modal-role').textContent = (p.role || 'user').replace('_', ' ').toUpperCase();
             document.getElementById('p-modal-bio').textContent = p.bio ? `"${p.bio}"` : '"Quiet observer."';
             document.getElementById('p-modal-following-count').textContent = `${(p.following || []).length} Following`;
-            
             dmBtn.onclick = () => openDmChat(uid, p.username, p.emoji, p.bio);
 
             const followersSnap = await getDocs(query(collection(db, "users"), where("following", "array-contains", uid)));
             const userPostsSnap = await getDocs(collection(db, `users/${uid}/posts`));
-            trackReadCredit(followersSnap.size + userPostsSnap.size);
-            
             document.getElementById('p-modal-followers-count').textContent = `${followersSnap.size} Followers`;
 
-            const badgeData = { ...p, followersCount: followersSnap.size };
-            const earnedBadges = calculateUserBadges(badgeData, userPostsSnap.size);
-            
+            const earnedBadges = calculateUserBadges({ ...p, followersCount: followersSnap.size }, userPostsSnap.size);
             let badgesContainer = document.getElementById('p-modal-badges');
             if (!badgesContainer) {
-                badgesContainer = document.createElement('div');
-                badgesContainer.id = 'p-modal-badges';
+                badgesContainer = document.createElement('div'); badgesContainer.id = 'p-modal-badges';
                 badgesContainer.className = "flex gap-1.5 flex-wrap justify-center mt-2";
                 document.getElementById('p-modal-bio').after(badgesContainer);
             }
-            badgesContainer.innerHTML = earnedBadges.map(b => 
-                `<span class="text-xs font-bold px-2 py-0.5 rounded border ${b.bg} sketched-border-alt">${b.title}</span>`
-            ).join('');
+            badgesContainer.innerHTML = earnedBadges.map(b => `<span class="text-xs font-bold px-2 py-0.5 rounded border ${b.bg} sketched-border-alt">${b.title}</span>`).join('');
         }
         loadProfilePosts(uid);
-    } catch (e) { console.error("Profile fetch error:", e); }
+    } catch (e) {}
 };
 
-// --- ACCOUNT SELF-DELETION HANDLER ---
 document.getElementById('btn-delete-account')?.addEventListener('click', async () => {
     if (!currentUser || userProfile?.role === 'guest') return;
     const confirmName = prompt(`Type your username (${userProfile.username}) to confirm PERMANENT ACCOUNT DELETION:`);
-    if (confirmName !== userProfile.username) return alert("Username did not match. Account deletion cancelled.");
-
+    if (confirmName !== userProfile.username) return alert("Username did not match.");
     try {
-        const uid = currentUser.uid;
-        const uname = userProfile.username;
-
-        await deleteDoc(doc(db, "usernames", uname)).catch(() => {});
-        await deleteDoc(doc(db, "users", uid)).catch(() => {});
-        trackWriteCredit(2);
-
+        await deleteDoc(doc(db, "usernames", userProfile.username)).catch(() => {});
+        await deleteDoc(doc(db, "users", currentUser.uid)).catch(() => {});
         await deleteUser(currentUser);
         alert("Account deleted permanently.");
         window.location.reload();
-    } catch(e) {
-        console.error("Delete account error:", e);
-        alert("Account deletion failed. Please re-log in and try again: " + e.message);
-    }
+    } catch(e) { alert("Deletion failed. Re-log in and try again."); }
 });
 
-document.getElementById('profile-close').onclick = () => {
+document.getElementById('profile-close')?.addEventListener('click', () => {
     document.getElementById('profile-modal').classList.add('hidden');
     if(unsubProfilePosts) { unsubProfilePosts(); unsubProfilePosts = null; }
-};
+});
 
 window.exportProfileAsImage = () => {
     const cardEl = document.getElementById('profile-card-container');
-    if (!cardEl || typeof html2canvas === 'undefined') {
-        alert("Image generator loading, please try again in a moment!");
-        return;
-    }
-    html2canvas(cardEl, { 
-        backgroundColor: '#fefce8', 
-        scale: 2,
-        ignoreElements: (el) => el.classList.contains('no-export')
-    }).then(canvas => {
-        const link = document.createElement('a');
-        link.download = `PensUp_Profile_${Date.now()}.png`;
-        link.href = canvas.toDataURL('image/png');
-        link.click();
-    }).catch(e => console.error("Export profile error:", e));
+    if (!cardEl || typeof html2canvas === 'undefined') return alert("Loading generator...");
+    html2canvas(cardEl, { backgroundColor: '#fefce8', scale: 2, ignoreElements: (el) => el.classList.contains('no-export') }).then(canvas => {
+        const link = document.createElement('a'); link.download = `Profile.png`; link.href = canvas.toDataURL('image/png'); link.click();
+    });
 };
 
 window.deletePost = async (postOwnerUid, postId) => {
-    if (confirm("Are you sure you want to delete this post?")) {
+    if (confirm("Delete this post?")) {
         try {
             await deleteDoc(doc(db, `users/${postOwnerUid}/posts/${postId}`));
             await deleteDoc(doc(db, `global_posts`, postId)).catch(() => {});
-            trackWriteCredit(2);
-        } catch(e) {
-            console.error("Delete post error:", e);
-            alert("Could not delete post.");
-        }
+        } catch(e) { alert("Could not delete post."); }
     }
 };
 
 function loadProfilePosts(uid) {
     if(unsubProfilePosts) unsubProfilePosts();
-    unsubProfilePosts = onSnapshot(query(collection(db, `users/${uid}/posts`), orderBy("createdAt", "desc")), (snapshot) => {
-        trackReadCredit(snapshot.docs.length);
+    unsubProfilePosts = onSnapshot(query(collection(db, `users/${uid}/posts`), orderBy("createdAt", "desc"), limit(20)), (snapshot) => {
         const listEl = document.getElementById('profile-posts-list');
+        if(!listEl) return;
         listEl.innerHTML = '';
         if(snapshot.empty) { listEl.innerHTML = '<div class="text-center text-slate-500 italic mt-4">No posts yet.</div>'; return; }
-        
         const canDeletePosts = currentUser && (uid === currentUser.uid || ['super_admin', 'admin'].includes(userProfile?.role));
-
-        snapshot.forEach(docSnap => {
-            renderPostCard(docSnap.id, docSnap.data(), uid, listEl, canDeletePosts);
-        });
-    });
+        snapshot.forEach(docSnap => renderPostCard(docSnap.id, docSnap.data(), uid, listEl, canDeletePosts));
+    }, (err) => {});
 }
 
 function renderPostCard(postId, post, ownerUid, containerEl, canDelete) {
@@ -1043,36 +815,30 @@ function renderPostCard(postId, post, ownerUid, containerEl, canDelete) {
     div.className = "bg-white p-3.5 sketched-border-alt flex flex-col gap-2 relative group shadow-xs transition-all duration-500 paper-mask";
     const timeStr = post.createdAt ? post.createdAt.toDate().toLocaleDateString() : '';
     
-    const deleteBtnHtml = canDelete 
-        ? `<button onclick="deletePost('${ownerUid}', '${postId}')" class="text-rose-500 hover:text-rose-700 font-bold p-1 hover:scale-110 transition-transform text-sm" title="Delete Post">✖</button>` 
-        : '';
-
+    const deleteBtnHtml = canDelete ? `<button onclick="deletePost('${ownerUid}', '${postId}')" class="text-rose-500 font-bold p-1">✖</button>` : '';
     const authorHeader = post.authorName ? `
         <div class="flex items-center justify-between pb-1.5 border-b border-slate-200/60">
-            <div class="flex items-center gap-2 cursor-pointer hover:opacity-80" onclick="showProfile('${ownerUid}')">
+            <div class="flex items-center gap-2 cursor-pointer" onclick="showProfile('${ownerUid}')">
                 <span class="text-xl bg-yellow-100 p-1 rounded-full sketched-border shrink-0">${escapeHTML(post.authorEmoji || '👤')}</span>
                 <span class="font-bold text-sm text-indigo-600">@${escapeHTML(post.authorName)}</span>
             </div>
             ${deleteBtnHtml}
         </div>` : '';
 
-    const doodleImgHtml = post.doodleImage ? `<div class="mt-1"><img src="${post.doodleImage}" class="max-h-48 rounded sketched-border bg-white p-1 object-contain" alt="Doodle sketch"></div>` : '';
-
+    const doodleImgHtml = post.doodleImage ? `<div class="mt-1"><img src="${post.doodleImage}" class="max-h-48 rounded sketched-border bg-white p-1 object-contain"></div>` : '';
     const shareUrl = `${window.location.origin}${window.location.pathname}?post=${postId}`;
-    const voteDisabled = !currentUser || userProfile?.role === 'guest' ? 'opacity-60 pointer-events-none' : '';
 
     const textRaw = post.text || '';
     const tags = extractTagsFromText(textRaw);
     const isLong = textRaw.length > 180;
-
     let bodyContentHtml = '';
+
     if (isLong) {
         const truncatedText = textRaw.substring(0, 180) + '...';
         const tagBarHtml = tags.length > 0 ? `
             <div id="post-tagbar-${postId}" class="flex gap-1.5 overflow-x-auto py-1 mt-1 border-t border-slate-200/60 no-scrollbar">
-                ${tags.map(t => `<span onclick="event.stopPropagation(); filterByTag('${t}')" class="text-xs font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded sketched-border-alt shrink-0 cursor-pointer hover:bg-indigo-100">#${escapeHTML(t)}</span>`).join('')}
+                ${tags.map(t => `<span onclick="event.stopPropagation(); filterByTag('${t}')" class="text-xs font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded sketched-border-alt shrink-0 cursor-pointer">#${escapeHTML(t)}</span>`).join('')}
             </div>` : '';
-
         bodyContentHtml = `
             <div id="post-trunc-${postId}">${parseTagsAndLinks(truncatedText)}</div>
             <div id="post-full-${postId}" class="hidden">${parseTagsAndLinks(textRaw)}</div>
@@ -1090,12 +856,12 @@ function renderPostCard(postId, post, ownerUid, containerEl, canDelete) {
         <div class="flex justify-between items-center text-xs border-t border-slate-200/60 pt-2 mt-1 flex-wrap gap-2">
             <div class="flex items-center gap-2">
                 <span class="text-slate-400 font-bold">${timeStr}</span>
-                <button onclick="exportPostAsImage('post-${postId}')" class="no-export text-indigo-600 font-bold hover:underline bg-indigo-50 px-2 py-0.5 rounded sketched-border-alt" title="Download styled paper note image">📷 Export Note</button>
-                <button onclick="navigator.clipboard.writeText('${shareUrl}'); alert('Direct link copied!');" class="no-export text-slate-500 font-bold hover:underline" title="Copy Link">🔗 Share</button>
+                <button onclick="exportPostAsImage('post-${postId}')" class="no-export text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded sketched-border-alt">📷 Export</button>
+                <button onclick="navigator.clipboard.writeText('${shareUrl}'); alert('Link copied!');" class="no-export text-slate-500 font-bold">🔗 Share</button>
             </div>
-            <div class="no-export flex gap-3 ${voteDisabled}">
-                <button onclick="togglePostVote('${ownerUid}', '${postId}', 'like')" class="${hasLiked ? 'text-indigo-600 scale-110' : 'text-slate-400'} font-bold hover:scale-110 transition-transform">👍 ${likes.length}</button>
-                <button onclick="togglePostVote('${ownerUid}', '${postId}', 'dislike')" class="${hasDisliked ? 'text-rose-600 scale-110' : 'text-slate-400'} font-bold hover:scale-110 transition-transform">👎 ${dislikes.length}</button>
+            <div class="no-export flex gap-3">
+                <button onclick="togglePostVote('${ownerUid}', '${postId}', 'like')" class="${hasLiked ? 'text-indigo-600' : 'text-slate-400'} font-bold">👍 ${likes.length}</button>
+                <button onclick="togglePostVote('${ownerUid}', '${postId}', 'dislike')" class="${hasDisliked ? 'text-rose-600' : 'text-slate-400'} font-bold">👎 ${dislikes.length}</button>
             </div>
         </div>
     `;
@@ -1107,15 +873,13 @@ window.toggleExpandPost = (postId) => {
     const truncEl = document.getElementById(`post-trunc-${postId}`);
     const tagBarEl = document.getElementById(`post-tagbar-${postId}`);
     const btnEl = document.getElementById(`post-expand-btn-${postId}`);
-
+    if (!fullEl) return;
     if (fullEl.classList.contains('hidden')) {
-        fullEl.classList.remove('hidden');
-        truncEl.classList.add('hidden');
+        fullEl.classList.remove('hidden'); truncEl.classList.add('hidden');
         if (tagBarEl) tagBarEl.classList.add('hidden');
         btnEl.textContent = 'Show Less ▲';
     } else {
-        fullEl.classList.add('hidden');
-        truncEl.classList.remove('hidden');
+        fullEl.classList.add('hidden'); truncEl.classList.remove('hidden');
         if (tagBarEl) tagBarEl.classList.remove('hidden');
         btnEl.textContent = 'Show More ▼';
     }
@@ -1123,73 +887,48 @@ window.toggleExpandPost = (postId) => {
 
 window.exportPostAsImage = (elementId) => {
     const cardEl = document.getElementById(elementId);
-    if (!cardEl || typeof html2canvas === 'undefined') {
-        alert("Image generator loading, please try again in a moment!");
-        return;
-    }
-    html2canvas(cardEl, { 
-        backgroundColor: '#fdfaf6', 
-        scale: 2,
-        ignoreElements: (el) => el.classList.contains('no-export')
-    }).then(canvas => {
-        const link = document.createElement('a');
-        link.download = `PensUp_Note_${Date.now()}.png`;
-        link.href = canvas.toDataURL('image/png');
-        link.click();
-    }).catch(e => console.error("Export note error:", e));
+    if (!cardEl || typeof html2canvas === 'undefined') return;
+    html2canvas(cardEl, { backgroundColor: '#fdfaf6', scale: 2, ignoreElements: (el) => el.classList.contains('no-export') }).then(canvas => {
+        const link = document.createElement('a'); link.download = `Note.png`; link.href = canvas.toDataURL('image/png'); link.click();
+    });
 };
 
-document.getElementById('btn-publish-post').onclick = async () => {
+document.getElementById('btn-publish-post')?.addEventListener('click', async () => {
     if (userProfile?.role === 'guest') return;
-    if (isCreditModeActive && userWriteCredits <= 0) return alert("Write quota depleted for Credit Mode.");
     const input = document.getElementById('post-input');
     const txt = input.value.trim();
     if(!txt && !attachedDoodleBase64) return;
-
     try {
         const postData = {
-            text: txt || '',
-            doodleImage: attachedDoodleBase64 || null,
-            createdAt: serverTimestamp(),
-            likes: [],
-            dislikes: [],
-            authorId: currentUser.uid,
-            authorName: userProfile.username,
-            authorEmoji: userProfile.emoji || '👤'
+            text: txt || '', doodleImage: attachedDoodleBase64 || null, createdAt: serverTimestamp(),
+            likes: [], dislikes: [], authorId: currentUser.uid, authorName: userProfile.username, authorEmoji: userProfile.emoji || '👤'
         };
-
         const docRef = await addDoc(collection(db, `users/${currentUser.uid}/posts`), postData);
         await setDoc(doc(db, `global_posts`, docRef.id), postData);
-        trackWriteCredit(2);
-
-        input.value = '';
-        attachedDoodleBase64 = null;
+        input.value = ''; attachedDoodleBase64 = null;
         document.getElementById('post-doodle-preview-container').classList.add('hidden');
-    } catch(e) { console.error("Post error:", e); }
-};
+    } catch(e) { alert("Post limit or quota error reached."); }
+});
 
 window.togglePostVote = async (postOwnerUid, postId, type) => {
     if (!currentUser || userProfile?.role === 'guest') return;
     const postRef = doc(db, `users/${postOwnerUid}/posts`, postId);
     const globalRef = doc(db, `global_posts`, postId);
-    const snap = await getDoc(postRef);
-    trackReadCredit(1);
-    if(!snap.exists()) return;
-    const data = snap.data();
-    const uid = currentUser.uid;
-    const isLike = type === 'like';
-    
-    let updates = {};
-    if(isLike) {
-        if(data.likes?.includes(uid)) updates.likes = arrayRemove(uid);
-        else { updates.likes = arrayUnion(uid); updates.dislikes = arrayRemove(uid); }
-    } else {
-        if(data.dislikes?.includes(uid)) updates.dislikes = arrayRemove(uid);
-        else { updates.dislikes = arrayUnion(uid); updates.likes = arrayRemove(uid); }
-    }
-    await updateDoc(postRef, updates);
-    await updateDoc(globalRef, updates).catch(() => {});
-    trackWriteCredit(2);
+    try {
+        const snap = await getDoc(postRef);
+        if(!snap.exists()) return;
+        const data = snap.data(); const uid = currentUser.uid; const isLike = type === 'like';
+        let updates = {};
+        if(isLike) {
+            if(data.likes?.includes(uid)) updates.likes = arrayRemove(uid);
+            else { updates.likes = arrayUnion(uid); updates.dislikes = arrayRemove(uid); }
+        } else {
+            if(data.dislikes?.includes(uid)) updates.dislikes = arrayRemove(uid);
+            else { updates.dislikes = arrayUnion(uid); updates.likes = arrayRemove(uid); }
+        }
+        await updateDoc(postRef, updates);
+        await updateDoc(globalRef, updates).catch(() => {});
+    } catch(e) {}
 };
 
 window.filterByTag = (tag) => {
@@ -1200,85 +939,59 @@ window.filterByTag = (tag) => {
     applyFeedFilterAndSort();
 };
 
-document.getElementById('btn-clear-tag-filter').onclick = () => {
+document.getElementById('btn-clear-tag-filter')?.addEventListener('click', () => {
     activeTagFilter = null;
     document.getElementById('btn-clear-tag-filter').classList.add('hidden');
     feedSearchInput.value = '';
     applyFeedFilterAndSort();
-};
+});
 
 function loadGlobalFeed(scrollToPostId = null) {
     if (unsubFeed) unsubFeed();
     const container = document.getElementById('global-feed-list');
+    if(!container) return;
     container.innerHTML = '<div class="text-center italic text-slate-500 mt-6">Ranking global notebook feed...</div>';
 
-    const itemLimit = isCreditModeActive ? 30 : 100;
-
-    unsubFeed = onSnapshot(query(collection(db, "global_posts"), limit(itemLimit)), (snapshot) => {
-        trackReadCredit(snapshot.docs.length);
+    unsubFeed = onSnapshot(query(collection(db, "global_posts"), limit(30)), (snapshot) => {
         container.innerHTML = '';
-        if (snapshot.empty) {
-            container.innerHTML = '<div class="text-center italic text-slate-500 mt-6">No public posts in the global feed yet.</div>';
-            return;
-        }
-
+        if (snapshot.empty) { container.innerHTML = '<div class="text-center italic text-slate-500 mt-6">No public posts yet.</div>'; return; }
         globalPostsCache = [];
-        snapshot.forEach(docSnap => {
-            const p = docSnap.data();
-            globalPostsCache.push({ id: docSnap.id, ...p });
-        });
-
+        snapshot.forEach(docSnap => globalPostsCache.push({ id: docSnap.id, ...docSnap.data() }));
         applyFeedFilterAndSort();
-
         if (scrollToPostId) {
             setTimeout(() => {
                 const targetEl = document.getElementById(`post-${scrollToPostId}`);
-                if (targetEl) {
-                    targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    targetEl.classList.add('ring-4', 'ring-amber-400');
-                    setTimeout(() => targetEl.classList.remove('ring-4', 'ring-amber-400'), 3000);
-                }
+                if (targetEl) targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }, 300);
         }
-    });
+    }, (err) => { container.innerHTML = '<div class="text-center italic text-rose-500 mt-6">Database quota exceeded temporarily. Try again later.</div>'; });
 }
 
-// --- SEARCH, COMBINED SORTING & DATE FILTERS ---
 function applyFeedFilterAndSort() {
     const container = document.getElementById('global-feed-list');
     if (!container) return;
-
     const q = feedSearchInput?.value.trim().toLowerCase() || '';
     const sortBy = document.getElementById('feed-sort-select')?.value || 'recent';
     const dateFilter = document.getElementById('feed-date-select')?.value || 'all';
-
     const now = Date.now();
-    const oneDayMs = 24 * 60 * 60 * 1000;
-    const oneWeekMs = 7 * oneDayMs;
 
     let result = globalPostsCache.filter(p => {
         const text = (p.text || '').toLowerCase();
         const author = (p.authorName || '').toLowerCase();
         const matchesQuery = !q || text.includes(q) || author.includes(q);
-
         let matchesDate = true;
-        if (p.createdAt) {
+        if (p.createdAt && (dateFilter === 'today' || dateFilter === 'week')) {
             const pTime = p.createdAt.toDate ? p.createdAt.toDate().getTime() : 0;
-            if (dateFilter === 'today') {
-                matchesDate = (now - pTime) <= oneDayMs;
-            } else if (dateFilter === 'week') {
-                matchesDate = (now - pTime) <= oneWeekMs;
-            }
+            if (dateFilter === 'today') matchesDate = (now - pTime) <= 86400000;
+            else if (dateFilter === 'week') matchesDate = (now - pTime) <= 604800000;
         }
         return matchesQuery && matchesDate;
     });
 
     result.sort((a, b) => {
-        const aLikes = (a.likes || []).length;
-        const bLikes = (b.likes || []).length;
-        const aTime = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : 0) : 0;
-        const bTime = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : 0) : 0;
-
+        const aLikes = (a.likes || []).length; const bLikes = (b.likes || []).length;
+        const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
+        const bTime = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
         if (sortBy === 'popular') return bLikes - aLikes;
         if (sortBy === 'unpopular') return aLikes - bLikes;
         if (sortBy === 'oldest') return aTime - bTime;
@@ -1295,10 +1008,7 @@ document.getElementById('feed-date-select')?.addEventListener('change', applyFee
 
 function renderFeedList(posts, containerEl) {
     containerEl.innerHTML = '';
-    if (posts.length === 0) {
-        containerEl.innerHTML = '<div class="text-center italic text-slate-500 mt-6">No matching posts found.</div>';
-        return;
-    }
+    if (posts.length === 0) { containerEl.innerHTML = '<div class="text-center italic text-slate-500 mt-6">No matching posts found.</div>'; return; }
     posts.forEach(post => {
         const canDelete = currentUser && (post.authorId === currentUser.uid || ['super_admin', 'admin'].includes(userProfile?.role));
         renderPostCard(post.id, post, post.authorId, containerEl, canDelete);
@@ -1311,394 +1021,260 @@ window.setStickyColor = (color) => {
         const btn = document.getElementById(`color-btn-${c}`);
         if(btn) btn.classList.remove('ring-2', 'ring-indigo-500');
     });
-    const activeBtn = document.getElementById(`color-btn-${color}`);
-    if(activeBtn) activeBtn.classList.add('ring-2', 'ring-indigo-500');
+    document.getElementById(`color-btn-${color}`)?.classList.add('ring-2', 'ring-indigo-500');
 };
 
-document.getElementById('btn-publish-sticky').onclick = async () => {
+document.getElementById('btn-publish-sticky')?.addEventListener('click', async () => {
     if (userProfile?.role === 'guest') return;
-    if (isCreditModeActive && userWriteCredits <= 0) return alert("Write quota depleted for Credit Mode.");
     const input = document.getElementById('sticky-input');
     const txt = input.value.trim();
     if(!txt) return;
-
     try {
         await addDoc(collection(db, "sticky_board"), {
-            text: txt,
-            color: currentStickyColor,
-            authorName: userProfile.username,
-            authorEmoji: userProfile.emoji || '👤',
-            authorId: currentUser.uid,
-            createdAt: serverTimestamp()
+            text: txt, color: currentStickyColor, authorName: userProfile.username,
+            authorEmoji: userProfile.emoji || '👤', authorId: currentUser.uid, createdAt: serverTimestamp()
         });
-        trackWriteCredit(1);
         input.value = '';
-    } catch(e) { console.error("Sticky note error:", e); }
-};
+    } catch(e) {}
+});
 
 function loadStickyNotes() {
-    if (userProfile?.role === 'guest') {
-        document.getElementById('sticky-creator-box').classList.add('hidden');
-    }
+    if (userProfile?.role === 'guest') document.getElementById('sticky-creator-box')?.classList.add('hidden');
     if (unsubSticky) unsubSticky();
     const grid = document.getElementById('sticky-board-grid');
+    if(!grid) return;
     grid.innerHTML = '<div class="text-center italic text-slate-500 col-span-full">Pinning sticky notes...</div>';
 
-    unsubSticky = onSnapshot(query(collection(db, "sticky_board"), orderBy("createdAt", "desc"), limit(40)), (snapshot) => {
-        trackReadCredit(snapshot.docs.length);
+    unsubSticky = onSnapshot(query(collection(db, "sticky_board"), orderBy("createdAt", "desc"), limit(20)), (snapshot) => {
         grid.innerHTML = '';
-        if (snapshot.empty) {
-            grid.innerHTML = '<div class="text-center italic text-slate-500 col-span-full">No sticky notes on the board yet. Be the first to pin one!</div>';
-            return;
-        }
-
+        if (snapshot.empty) { grid.innerHTML = '<div class="text-center italic text-slate-500 col-span-full">No sticky notes yet.</div>'; return; }
         const colorClasses = {
-            yellow: 'bg-yellow-100 text-amber-950 border-amber-300',
-            pink: 'bg-pink-100 text-rose-950 border-pink-300',
-            blue: 'bg-blue-100 text-blue-950 border-blue-300',
-            green: 'bg-emerald-100 text-emerald-950 border-emerald-300'
+            yellow: 'bg-yellow-100 text-amber-950 border-amber-300', pink: 'bg-pink-100 text-rose-950 border-pink-300',
+            blue: 'bg-blue-100 text-blue-950 border-blue-300', green: 'bg-emerald-100 text-emerald-950 border-emerald-300'
         };
-
         snapshot.forEach(docSnap => {
             const note = docSnap.data();
             const colorClass = colorClasses[note.color] || colorClasses.yellow;
             const canDelete = currentUser && (note.authorId === currentUser.uid || ['super_admin', 'admin'].includes(userProfile?.role));
-
             const div = document.createElement('div');
-            div.className = `${colorClass} p-3.5 sketched-border flex flex-col justify-between gap-3 relative shadow-md rotate-[-1deg] hover:rotate-0 transition-transform min-h-[130px]`;
-            
-            const deleteBtn = canDelete ? `<button onclick="deleteStickyNote('${docSnap.id}')" class="text-rose-600 font-bold hover:scale-110 text-xs bg-white/60 rounded px-1.5 py-0.5" title="Remove Note">✖</button>` : '';
-
+            div.className = `${colorClass} p-3.5 sketched-border flex flex-col justify-between gap-3 relative shadow-md rotate-[-1deg] min-h-[130px]`;
+            const deleteBtn = canDelete ? `<button onclick="deleteStickyNote('${docSnap.id}')" class="text-rose-600 font-bold text-xs bg-white/60 rounded px-1.5 py-0.5">✖</button>` : '';
             div.innerHTML = `
                 <div class="absolute -top-3 left-1/2 -translate-x-1/2 text-xl">📌</div>
                 <div class="text-lg leading-snug break-words mt-1">${escapeHTML(note.text)}</div>
                 <div class="flex justify-between items-center text-xs border-t border-black/10 pt-2 mt-1">
-                    <span class="font-bold cursor-pointer hover:underline" onclick="showProfile('${note.authorId}')">${escapeHTML(note.authorEmoji||'👤')} @${escapeHTML(note.authorName)}</span>
+                    <span class="font-bold cursor-pointer" onclick="showProfile('${note.authorId}')">${escapeHTML(note.authorEmoji||'👤')} @${escapeHTML(note.authorName)}</span>
                     ${deleteBtn}
                 </div>
             `;
             grid.appendChild(div);
         });
-    });
+    }, (err) => {});
 }
 
 window.deleteStickyNote = async (id) => {
     if (confirm("Take down this sticky note?")) {
-        try { 
-            await deleteDoc(doc(db, "sticky_board", id)); 
-            trackWriteCredit(1);
-        } catch(e) { console.error("Delete sticky error:", e); }
+        try { await deleteDoc(doc(db, "sticky_board", id)); } catch(e) {}
     }
 };
 
 const puzzleModal = document.getElementById('puzzle-modal');
-document.getElementById('btn-open-puzzle-creator').onclick = () => puzzleModal.classList.remove('hidden');
-document.getElementById('puzzle-close').onclick = () => puzzleModal.classList.add('hidden');
+document.getElementById('btn-open-puzzle-creator')?.addEventListener('click', () => puzzleModal?.classList.remove('hidden'));
+document.getElementById('puzzle-close')?.addEventListener('click', () => puzzleModal?.classList.add('hidden'));
 
-document.getElementById('btn-save-puzzle').onclick = async () => {
-    if (!userProfile || !['super_admin', 'admin'].includes(userProfile.role)) return alert("Admin privilege required.");
+document.getElementById('btn-save-puzzle')?.addEventListener('click', async () => {
+    if (!userProfile || !['super_admin', 'admin'].includes(userProfile.role)) return alert("Admin required.");
     const title = document.getElementById('puzzle-title-input').value.trim();
     const code = document.getElementById('puzzle-code-input').value.trim();
-    if (!title || !code) return alert("Please enter both title and code snippet.");
-
+    if (!title || !code) return alert("Enter both title and code.");
     try {
-        await addDoc(collection(db, "puzzles"), {
-            title: title,
-            code: code,
-            authorName: userProfile.username,
-            createdAt: serverTimestamp()
-        });
-        trackWriteCredit(1);
+        await addDoc(collection(db, "puzzles"), { title, code, authorName: userProfile.username, createdAt: serverTimestamp() });
         document.getElementById('puzzle-title-input').value = '';
         document.getElementById('puzzle-code-input').value = '';
         puzzleModal.classList.add('hidden');
         loadArcadePuzzles();
-    } catch(e) { console.error("Puzzle publish error:", e); }
-};
+    } catch(e) {}
+});
 
 function loadArcadePuzzles() {
     if (unsubPuzzles) unsubPuzzles();
     const arcadeList = document.getElementById('arcade-list');
+    if(!arcadeList) return;
     arcadeList.innerHTML = '<div class="text-center italic text-slate-500">Loading arcade games...</div>';
 
-    unsubPuzzles = onSnapshot(query(collection(db, "puzzles"), orderBy("createdAt", "desc"), limit(20)), (snapshot) => {
-        trackReadCredit(snapshot.docs.length);
+    unsubPuzzles = onSnapshot(query(collection(db, "puzzles"), orderBy("createdAt", "desc"), limit(10)), (snapshot) => {
         arcadeList.innerHTML = '';
-        if (snapshot.empty) {
-            arcadeList.innerHTML = '<div class="text-center italic text-slate-500 col-span-2">No puzzles or game snippets published yet.</div>';
-            return;
-        }
-
+        if (snapshot.empty) { arcadeList.innerHTML = '<div class="text-center italic text-slate-500 col-span-2">No puzzles published yet.</div>'; return; }
         let first = true;
         snapshot.forEach(docSnap => {
             const puzzle = docSnap.data();
             const div = document.createElement('div');
-            div.className = "bg-white p-3 sketched-border flex flex-col gap-2 cursor-pointer hover:bg-amber-50 transition-colors shadow-xs shrink-0 w-48";
+            div.className = "bg-white p-3 sketched-border flex flex-col gap-2 cursor-pointer hover:bg-amber-50 shadow-xs shrink-0 w-48";
             div.innerHTML = `
                 <div class="font-bold text-lg text-indigo-700 truncate">${escapeHTML(puzzle.title)}</div>
                 <div class="text-xs text-slate-500 italic">By @${escapeHTML(puzzle.authorName || 'admin')}</div>
-                <button class="mt-1 bg-emerald-500 text-white font-bold py-1 px-2 rounded sketched-border-alt text-sm hover:bg-emerald-600">Play / Run ➔</button>
+                <button class="mt-1 bg-emerald-500 text-white font-bold py-1 px-2 rounded sketched-border-alt text-sm">Play ➔</button>
             `;
             div.onclick = () => runPuzzleSnippet(puzzle.title, puzzle.code);
             arcadeList.appendChild(div);
-
-            if (first) {
-                runPuzzleSnippet(puzzle.title, puzzle.code);
-                first = false;
-            }
+            if (first) { runPuzzleSnippet(puzzle.title, puzzle.code); first = false; }
         });
-    });
+    }, (err) => {});
 }
 
 function runPuzzleSnippet(title, htmlCode) {
     const container = document.getElementById('arcade-active-container');
+    if(!container) return;
     container.innerHTML = `
         <div class="flex justify-between items-center border-b pb-2">
             <span class="font-['Permanent_Marker'] text-2xl text-amber-900">🕹️ ${escapeHTML(title)}</span>
-            <span class="text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded sketched-border-alt font-bold">Sandboxed Live Runner</span>
         </div>
         <div class="flex-1 w-full h-[450px] bg-slate-900 rounded sketched-border overflow-hidden relative">
             <iframe id="puzzle-sandbox" class="w-full h-full border-0 bg-white" sandbox="allow-scripts allow-modals"></iframe>
         </div>
     `;
     const iframe = document.getElementById('puzzle-sandbox');
-    iframe.srcdoc = htmlCode;
+    if(iframe) iframe.srcdoc = htmlCode;
 }
 
-let activeDmId = null;
-let activeDmTargetId = null;
-let activeDmTargetUser = null;
-let allUsersCache = [];
-let activeDmTab = 'all'; 
-
+let activeDmId = null, activeDmTargetId = null, activeDmTargetUser = null, allUsersCache = [], activeDmTab = 'all'; 
 const dmDirModal = document.getElementById('dm-directory-modal');
 const dmChatModal = document.getElementById('dm-chat-modal');
 const dmInput = document.getElementById('dm-message-input');
 const dmSendBtn = document.getElementById('btn-send-dm');
 
-document.getElementById('dm-tab-all').onclick = () => {
+document.getElementById('dm-tab-all')?.addEventListener('click', () => {
     activeDmTab = 'all';
-    document.getElementById('dm-tab-all').className = "flex-1 py-1.5 px-3 font-bold text-sm bg-indigo-500 text-white sketched-border transition-colors";
-    document.getElementById('dm-tab-following').className = "flex-1 py-1.5 px-3 font-bold text-sm bg-white text-slate-700 sketched-border hover:bg-amber-100 transition-colors";
+    document.getElementById('dm-tab-all').className = "flex-1 py-1.5 px-3 font-bold text-sm bg-indigo-500 text-white sketched-border";
+    document.getElementById('dm-tab-following').className = "flex-1 py-1.5 px-3 font-bold text-sm bg-white text-slate-700 sketched-border";
     renderUserDirectory(allUsersCache);
-};
+});
 
-document.getElementById('dm-tab-following').onclick = () => {
+document.getElementById('dm-tab-following')?.addEventListener('click', () => {
     activeDmTab = 'following';
-    document.getElementById('dm-tab-following').className = "flex-1 py-1.5 px-3 font-bold text-sm bg-amber-400 text-amber-950 sketched-border transition-colors";
-    document.getElementById('dm-tab-all').className = "flex-1 py-1.5 px-3 font-bold text-sm bg-white text-slate-700 sketched-border hover:bg-amber-100 transition-colors";
+    document.getElementById('dm-tab-following').className = "flex-1 py-1.5 px-3 font-bold text-sm bg-amber-400 text-amber-950 sketched-border";
+    document.getElementById('dm-tab-all').className = "flex-1 py-1.5 px-3 font-bold text-sm bg-white text-slate-700 sketched-border";
     renderUserDirectory(allUsersCache);
-};
+});
 
-document.getElementById('btn-open-dms').onclick = async () => {
+document.getElementById('btn-open-dms')?.addEventListener('click', async () => {
     dmDirModal.classList.remove('hidden');
     const list = document.getElementById('dm-user-list');
-    const searchInput = document.getElementById('dm-search-input');
-    if (searchInput) searchInput.value = '';
-
-    list.innerHTML = '<div class="text-center p-4 italic text-slate-500">Checking mailbox directory...</div>';
+    if(!list) return;
+    list.innerHTML = '<div class="text-center p-4 italic text-slate-500">Checking directory...</div>';
     try {
         const snap = await getDocs(collection(db, "users"));
-        trackReadCredit(snap.docs.length);
         allUsersCache = [];
-        
-        // --- HIDE GUEST ACCOUNTS FROM MAILBOX DIRECTORY ---
         snap.forEach(d => {
             const data = d.data();
             const isGuest = data.role === 'guest' || (data.username && data.username.startsWith('guest_'));
-            if ((!currentUser || d.id !== currentUser.uid) && !isGuest) {
-                allUsersCache.push({ id: d.id, ...data });
-            }
+            if ((!currentUser || d.id !== currentUser.uid) && !isGuest) allUsersCache.push({ id: d.id, ...data });
         });
-        document.getElementById('dm-following-tab-count').textContent = (userProfile?.following || []).length;
+        const countSpan = document.getElementById('dm-following-tab-count');
+        if(countSpan) countSpan.textContent = (userProfile?.following || []).length;
         renderUserDirectory(allUsersCache);
-    } catch(e) { list.innerHTML = '<div class="text-center p-4 text-rose-500 font-bold">Error loading directory.</div>'; console.error(e); }
-};
-document.getElementById('dm-directory-close').onclick = () => dmDirModal.classList.add('hidden');
+    } catch(e) { list.innerHTML = '<div class="text-center p-4 text-rose-500">Error loading directory.</div>'; }
+});
+
+document.getElementById('dm-directory-close')?.addEventListener('click', () => dmDirModal.classList.add('hidden'));
 
 function renderUserDirectory(users) {
     const list = document.getElementById('dm-user-list');
     const searchQ = document.getElementById('dm-search-input')?.value.trim().toLowerCase() || '';
+    if(!list) return;
     list.innerHTML = '';
     
     let filtered = users.filter(u => {
         const matchesSearch = u.username.toLowerCase().includes(searchQ) || (u.bio && u.bio.toLowerCase().includes(searchQ));
-        if (activeDmTab === 'following') {
-            return matchesSearch && (userProfile?.following || []).includes(u.id);
-        }
+        if (activeDmTab === 'following') return matchesSearch && (userProfile?.following || []).includes(u.id);
         return matchesSearch;
     });
 
-    if (filtered.length === 0) {
-        list.innerHTML = `<div class="text-center p-6 text-slate-400 italic">${activeDmTab === 'following' ? 'You are not following anyone yet.' : 'No notebook members found.'}</div>`;
-        return;
-    }
+    if (filtered.length === 0) { list.innerHTML = `<div class="text-center p-6 text-slate-400 italic">No members found.</div>`; return; }
 
     filtered.forEach(u => {
         const isFollowing = userProfile && (userProfile.following || []).includes(u.id);
         const div = document.createElement('div');
-        div.className = "flex items-center justify-between p-3 bg-white/80 sketched-border cursor-pointer hover:bg-amber-100/80 transition-all hover:-translate-y-0.5 group shadow-xs gap-2";
+        div.className = "flex items-center justify-between p-3 bg-white/80 sketched-border cursor-pointer hover:bg-amber-100/80 gap-2";
         div.onclick = () => openDmChat(u.id, u.username, u.emoji, u.bio);
         div.innerHTML = `
             <div class="flex items-center gap-3 overflow-hidden min-w-0">
                 <span class="text-3xl bg-amber-50 p-1.5 rounded-full sketched-border shrink-0">${escapeHTML(u.emoji||'👤')}</span>
                 <div class="flex flex-col min-w-0">
-                    <div class="flex items-center gap-1.5">
-                        <span class="font-bold text-lg text-slate-800 truncate">${escapeHTML(u.username)}</span>
-                        ${isFollowing ? '<span class="text-xs text-amber-600" title="Following">⭐</span>' : ''}
-                    </div>
-                    <span class="text-xs text-slate-500 italic truncate">${escapeHTML(u.bio || 'No bio scribbled')}</span>
+                    <span class="font-bold text-lg text-slate-800 truncate">${escapeHTML(u.username)}</span>
+                    <span class="text-xs text-slate-500 italic truncate">${escapeHTML(u.bio || '')}</span>
                 </div>
             </div>
-            <div class="flex items-center gap-1 shrink-0">
-                ${userProfile?.role !== 'guest' ? `<button onclick="event.stopPropagation(); toggleFollow('${u.id}')" class="text-xs font-bold px-2 py-1.5 rounded sketched-border hover:scale-105 ${isFollowing ? 'bg-amber-200 text-amber-900' : 'bg-slate-100 text-slate-600'}" title="${isFollowing ? 'Unfollow' : 'Follow'}">${isFollowing ? '⭐' : '+ Follow'}</button>` : ''}
-                <button class="bg-blue-500 text-white text-xs font-bold px-2.5 py-1.5 rounded sketched-border-alt hover:bg-blue-600 group-hover:scale-105 transition-transform">
-                    Chat ➔
-                </button>
-            </div>
+            <button class="bg-blue-500 text-white text-xs font-bold px-2.5 py-1.5 rounded sketched-border-alt">Chat ➔</button>
         `;
         list.appendChild(div);
     });
 }
 
-const searchEl = document.getElementById('dm-search-input');
-if (searchEl) searchEl.oninput = () => renderUserDirectory(allUsersCache);
+document.getElementById('dm-search-input')?.addEventListener('input', () => renderUserDirectory(allUsersCache));
 
 function openDmChat(targetUid, targetName, targetEmoji, targetBio) {
-    document.getElementById('profile-modal').classList.add('hidden');
-    dmDirModal.classList.add('hidden');
-    dmChatModal.classList.remove('hidden');
+    document.getElementById('profile-modal')?.classList.add('hidden');
+    dmDirModal?.classList.add('hidden');
+    dmChatModal?.classList.remove('hidden');
 
     activeDmTargetUser = { id: targetUid, username: targetName, emoji: targetEmoji, bio: targetBio };
-
     document.getElementById('dm-chat-title').textContent = `@${targetName}`;
     document.getElementById('dm-header-avatar').textContent = targetEmoji || '👤';
-    document.getElementById('dm-header-bio').textContent = targetBio ? `"${targetBio}"` : "Private Notebook Note";
-
-    const isFollowing = userProfile && (userProfile.following || []).includes(targetUid);
-    const badge = document.getElementById('dm-header-following-badge');
-    isFollowing ? badge.classList.remove('hidden') : badge.classList.add('hidden');
-
-    document.getElementById('dm-header-user-info').onclick = () => showProfile(targetUid);
-    document.getElementById('dm-header-profile-btn').onclick = () => showProfile(targetUid);
-    
-    if (userProfile?.role === 'guest') {
-        dmInput.placeholder = "Guests cannot send DMs...";
-        dmInput.disabled = true;
-        dmSendBtn.disabled = true;
-    }
+    document.getElementById('dm-header-bio').textContent = targetBio ? `"${targetBio}"` : "Private Note";
 
     const uids = [currentUser.uid, targetUid].sort();
     activeDmId = `dm_${uids[0]}_${uids[1]}`;
     activeDmTargetId = targetUid;
-    
-    applySettings();
     loadDmMessages();
 }
 
-document.getElementById('btn-close-dm-chat').onclick = () => {
-    dmChatModal.classList.add('hidden');
+document.getElementById('btn-close-dm-chat')?.addEventListener('click', () => {
+    dmChatModal?.classList.add('hidden');
     if(unsubDmMsg) { unsubDmMsg(); unsubDmMsg = null; }
-    activeDmId = null;
-    activeDmTargetId = null;
-    activeDmTargetUser = null;
-};
+    activeDmId = null; activeDmTargetId = null; activeDmTargetUser = null;
+});
 
 function loadDmMessages() {
     if(unsubDmMsg) unsubDmMsg();
     const container = document.getElementById('dm-messages-container');
-    container.innerHTML = '<div class="text-center mt-6 font-bold text-slate-500 italic">Opening notebook letter...</div>';
+    if(!container) return;
+    container.innerHTML = '<div class="text-center mt-6 font-bold text-slate-500 italic">Opening letter...</div>';
     
-    unsubDmMsg = onSnapshot(query(collection(db, `rooms/${activeDmId}/messages`), orderBy("createdAt", "asc"), limit(50)), (snapshot) => {
-        trackReadCredit(snapshot.docs.length);
+    unsubDmMsg = onSnapshot(query(collection(db, `rooms/${activeDmId}/messages`), orderBy("createdAt", "asc"), limit(25)), (snapshot) => {
         container.innerHTML = '';
-        if(snapshot.empty) { 
-            const targetName = activeDmTargetUser?.username || 'user';
-            container.innerHTML = `
-                <div class="flex flex-col items-center justify-center my-auto p-6 text-center text-slate-500 gap-2">
-                    <span class="text-5xl animate-bounce">💌</span>
-                    <span class="font-['Permanent_Marker'] text-2xl text-slate-700">No Private Notes Yet</span>
-                    <p class="text-sm italic max-w-xs">Scribble a note below to start your private conversation with @${escapeHTML(targetName)}.</p>
-                </div>`; 
-            return; 
-        }
-        
+        if(snapshot.empty) { container.innerHTML = `<div class="text-center p-6 text-slate-500 italic">No private notes yet.</div>`; return; }
         snapshot.forEach(docSnap => renderMessage(docSnap.id, docSnap.data(), container, activeDmId));
         container.scrollTo(0, container.scrollHeight);
-    });
+    }, (err) => {});
 }
 
 dmSendBtn.onclick = async () => {
     const text = dmInput.value.trim();
     if(!text || !activeDmId || userProfile.suspended || userProfile.role === 'guest') return;
-    if (isCreditModeActive && userWriteCredits <= 0) return alert("Write quota depleted for Credit Mode.");
     try {
-        if (settings.soundEnabled) { writeSound.currentTime = 0; writeSound.play().catch(e=>e); }
         await addDoc(collection(db, `rooms/${activeDmId}/messages`), {
             senderId: currentUser.uid, senderName: userProfile.username, senderEmoji: userProfile.emoji || '👤',
             text: text, createdAt: serverTimestamp(), isDeleted: false, isPinned: false
         });
-        trackWriteCredit(1);
-
-        if (activeDmTargetId) {
-            await addDoc(collection(db, `users/${activeDmTargetId}/notifications`), {
-                senderId: currentUser.uid,
-                senderName: userProfile.username,
-                text: text,
-                createdAt: serverTimestamp(),
-                type: 'dm',
-                roomId: activeDmId
-            }).catch(e => console.warn("DM notification dispatch error:", e));
-            trackWriteCredit(1);
-        }
-
-        dmInput.value = ''; updateDmInput();
-    } catch (e) { console.error("DM Send error:", e); }
+        dmInput.value = '';
+    } catch (e) { alert("DM limit reached."); }
 };
-const updateDmInput = () => { if(userProfile?.role === 'guest') return; dmSendBtn.disabled = !dmInput.value.trim(); dmInput.style.height = 'auto'; dmInput.style.height = Math.min(dmInput.scrollHeight, 120) + 'px'; };
-dmInput.addEventListener('input', updateDmInput);
 
 const adminModal = document.getElementById('admin-modal');
 UI.adminBtn.onclick = async () => {
-    adminModal.classList.remove('hidden');
-    const list = document.getElementById('admin-user-list'); list.innerHTML = 'Flipping pages...';
-    document.getElementById('storage-status-text').textContent = "Database status: Healthy. Estimated cache size: ~1.4 MB. 0 Doodle items flagged for cleanup.";
+    adminModal?.classList.remove('hidden');
+    const list = document.getElementById('admin-user-list');
+    if(!list) return;
+    list.innerHTML = 'Flipping pages...';
     try {
         const usersSnap = await getDocs(collection(db, "users")); list.innerHTML = '';
-        trackReadCredit(usersSnap.docs.length);
         usersSnap.forEach(docSnap => {
             const u = docSnap.data();
-            const isTargetSuper = SUPER_ADMINS.includes(u.username);
-            const iAmSuper = userProfile.role === 'super_admin';
-            if (!iAmSuper && (['super_admin', 'admin'].includes(u.role) || isTargetSuper)) return;
-            if (isTargetSuper && !iAmSuper) return; 
-
-            const div = document.createElement('div'); div.className = "flex flex-col gap-2 bg-white p-2 sketched-border mb-1";
-            div.innerHTML = `
-                <div class="flex justify-between items-center flex-wrap gap-2">
-                    <span class="font-bold">${escapeHTML(u.emoji||'👤')} ${escapeHTML(u.username)} (${u.role || 'user'}) ${u.suspended ? '<b class="text-rose-500">(Banned)</b>' : ''}</span>
-                    <div class="flex gap-1 text-sm font-bold">
-                        ${!isTargetSuper ? `<button onclick="toggleSuspend('${docSnap.id}',${!u.suspended})" class="bg-amber-400 text-white px-2 py-1 sketched-border hover:bg-amber-500">${u.suspended ? 'Unban' : 'Ban'}</button>` : ''}
-                        ${(iAmSuper && !isTargetSuper) ? `<button onclick="toggleRole('${docSnap.id}', '${u.role === 'admin' ? 'user' : 'admin'}')" class="bg-indigo-400 text-white px-2 py-1 sketched-border hover:bg-indigo-500">${u.role === 'admin' ? 'Demote' : 'Make Admin'}</button>` : ''}
-                    </div>
-                </div>`;
+            const div = document.createElement('div'); div.className = "flex justify-between items-center bg-white p-2 sketched-border mb-1 text-sm";
+            div.innerHTML = `<span>${escapeHTML(u.username)} (${u.role || 'user'})</span>`;
             list.appendChild(div);
         });
-    } catch (e) { list.innerHTML = `<span class="text-rose-600 font-bold">Failed to load user list.</span>`; }
+    } catch (e) { list.innerHTML = `<span class="text-rose-600">Failed to load.</span>`; }
 };
-document.getElementById('admin-close').onclick = () => adminModal.classList.add('hidden');
-window.toggleSuspend = async (uid, state) => { await updateDoc(doc(db, "users", uid), { suspended: state }); trackWriteCredit(1); UI.adminBtn.click(); };
-window.toggleRole = async (uid, newRole) => { await updateDoc(doc(db, "users", uid), { role: newRole }); trackWriteCredit(1); UI.adminBtn.click(); };
-
-document.getElementById('btn-run-storage-guardian').onclick = () => {
-    alert("Storage Guardian Sweep complete! Scanned global posts and doodles. 0 redundant files found.");
-    document.getElementById('storage-status-text').textContent = "Last sweep run: Just now. Storage usage optimal.";
-};
-
-document.getElementById('btn-toggle-global-links').onclick = async () => {
-    if(userProfile.role !== 'super_admin') return alert("Super Admin required.");
-    try { 
-        await setDoc(doc(db, "app_settings", "global_settings"), { linksEnabled: !linksEnabledGlobally }, { merge: true }); 
-        trackWriteCredit(1);
-    } catch(e) { console.error(e); }
-};
+document.getElementById('admin-close')?.addEventListener('click', () => adminModal?.classList.add('hidden'));
