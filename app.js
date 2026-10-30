@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInAnonymously, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
-import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, setDoc, getDoc, updateDoc, getDocs, deleteDoc, arrayUnion, arrayRemove, where } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInAnonymously, onAuthStateChanged, signOut, deleteUser, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, setDoc, getDoc, updateDoc, getDocs, deleteDoc, arrayUnion, arrayRemove, where, limit } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyDgou5bwByER3Tw_lL-BX1n02dgAESYft0",
@@ -23,6 +23,14 @@ let currentStickyColor = 'yellow';
 let globalPostsCache = [];
 let activeTagFilter = null;
 let presenceInterval = null;
+
+// --- CREDIT MODE & FIRESTORE RATE GUARD VARIABLES ---
+let activeOnlineUsersCount = 1;
+let isCreditModeActive = false;
+let userReadCredits = 100;
+let userWriteCredits = 50;
+const DAILY_FREE_READ_LIMIT = 50000;
+const DAILY_FREE_WRITE_LIMIT = 20000;
 
 const ROOM_ID = "main-room";
 const SUPER_ADMINS = ['anoimazo1', 'anointo', 'amazo'];
@@ -63,7 +71,6 @@ function updateSEO({ title, description, image, url, authorName, datePublished }
         document.getElementById('og-image')?.setAttribute('content', image);
     }
 
-    // --- GOOGLE SEARCH CONSOLE JSON-LD STRUCTURED DATA ---
     let ldScript = document.getElementById('dynamic-schema');
     if (!ldScript) {
         ldScript = document.createElement('script');
@@ -78,7 +85,7 @@ function updateSEO({ title, description, image, url, authorName, datePublished }
         "@type": "DiscussionForumPosting",
         "headline": title || "PensUp Pro - Handwritten Study Notes & Community",
         "text": description || "Handwritten notes, chat, and community discussions on PensUp Pro.",
-        "datePublished": datePublished || new Date().toISOString(),
+        "datePublished": datePublished || "2026-02-01T00:00:00Z",
         "url": currentUrl,
         "author": {
             "@type": "Person",
@@ -101,6 +108,7 @@ async function handleUrlRouting() {
     if (postId) {
         try {
             const postSnap = await getDoc(doc(db, "global_posts", postId));
+            trackReadCredit(1);
             if (postSnap.exists()) {
                 const data = postSnap.data();
                 updateSEO({
@@ -117,6 +125,7 @@ async function handleUrlRouting() {
     } else if (puzzleId) {
         try {
             const puzzleSnap = await getDoc(doc(db, "puzzles", puzzleId));
+            trackReadCredit(1);
             if (puzzleSnap.exists()) {
                 const data = puzzleSnap.data();
                 updateSEO({
@@ -130,6 +139,57 @@ async function handleUrlRouting() {
     } else if (profileUid) {
         showProfile(profileUid);
     }
+}
+
+// --- FIRESTORE CREDIT & RATE GUARDIAN ENGINE ---
+function trackReadCredit(count = 1) {
+    if (isCreditModeActive) {
+        userReadCredits = Math.max(0, userReadCredits - count);
+        updateCreditBannerUI();
+    }
+}
+
+function trackWriteCredit(count = 1) {
+    if (isCreditModeActive) {
+        userWriteCredits = Math.max(0, userWriteCredits - count);
+        updateCreditBannerUI();
+    }
+}
+
+function updateCreditBannerUI() {
+    const banner = document.getElementById('credit-mode-banner');
+    const counter = document.getElementById('credit-counter');
+    if (isCreditModeActive) {
+        banner.classList.remove('hidden');
+        counter.textContent = `Reads: ${userReadCredits} | Writes: ${userWriteCredits}`;
+    } else {
+        banner.classList.add('hidden');
+    }
+}
+
+async function checkDatabaseUsageLimits() {
+    try {
+        const statsRef = doc(db, "app_settings", "usage_stats");
+        const snap = await getDoc(statsRef);
+        if (snap.exists()) {
+            const data = snap.data();
+            const todayReads = data.todayReads || 0;
+            const todayWrites = data.todayWrites || 0;
+
+            if (todayReads >= (DAILY_FREE_READ_LIMIT * 0.8) || todayWrites >= (DAILY_FREE_WRITE_LIMIT * 0.8)) {
+                isCreditModeActive = true;
+                const remainingReads = Math.max(0, DAILY_FREE_READ_LIMIT - todayReads);
+                const remainingWrites = Math.max(0, DAILY_FREE_WRITE_LIMIT - todayWrites);
+                userReadCredits = Math.floor(remainingReads / Math.max(1, activeOnlineUsersCount));
+                userWriteCredits = Math.floor(remainingWrites / Math.max(1, activeOnlineUsersCount));
+            } else {
+                isCreditModeActive = false;
+            }
+        } else {
+            isCreditModeActive = false;
+        }
+    } catch (e) { console.warn("Usage check note:", e); }
+    updateCreditBannerUI();
 }
 
 function applySettings() {
@@ -209,7 +269,7 @@ function notifyUser(senderName, text, type = 'chat') {
             const title = type === 'dm' ? `PensUp 📫 DM from ${senderName}` : `PensUp 📝 Note from ${senderName}`;
             const n = new Notification(title, { 
                 body: text.length > 60 ? text.substring(0, 60) + "..." : text, 
-                icon: "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📝</text></svg>" 
+                icon: "https://anointo-1.github.io/pensUp/PensUp.jpg"
             });
             n.onclick = () => { window.focus(); n.close(); }; 
             return;
@@ -241,16 +301,57 @@ function listenForNotifications(uid) {
 
 const escapeHTML = (str) => str ? String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;") : '';
 
+// --- IN-APP LINK PREVIEW TRIGGER ---
+window.openInAppWebLink = (url) => {
+    const modal = document.getElementById('link-preview-modal');
+    const iframe = document.getElementById('link-preview-iframe');
+    const title = document.getElementById('link-preview-title');
+    const urlText = document.getElementById('link-preview-url-text');
+    const extBtn = document.getElementById('link-preview-external-btn');
+
+    if (!modal || !iframe) {
+        window.open(url, '_blank');
+        return;
+    }
+
+    title.textContent = `Viewing Web Link`;
+    urlText.textContent = url;
+    extBtn.href = url;
+    iframe.src = url;
+
+    modal.classList.remove('hidden');
+};
+
+document.getElementById('link-preview-close')?.addEventListener('click', () => {
+    const modal = document.getElementById('link-preview-modal');
+    const iframe = document.getElementById('link-preview-iframe');
+    if (iframe) iframe.src = 'about:blank';
+    if (modal) modal.classList.add('hidden');
+});
+
 const parseTagsAndLinks = (rawText) => {
     let safeText = escapeHTML(rawText);
+
     if (linksEnabledGlobally) {
-        safeText = safeText.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" class="text-blue-600 underline font-semibold hover:text-blue-800 break-all pointer-events-auto" onclick="event.stopPropagation()">$1</a>');
+        safeText = safeText.replace(/(https?:\/\/[^\s]+)/g, (match) => {
+            return `<span onclick="event.stopPropagation(); openInAppWebLink('${match}')" class="text-blue-600 underline font-semibold hover:text-blue-800 break-all cursor-pointer inline-block">${match}</span>`;
+        });
     } else {
         safeText = safeText.replace(/(https?:\/\/[^\s]+)/g, '<span class="italic text-slate-400 bg-slate-100 px-1 rounded">[Link Disabled by Admin]</span>');
     }
+
     safeText = safeText.replace(/#([a-zA-Z][\w\-]*)/g, '<span onclick="event.stopPropagation(); filterByTag(\'$1\')" class="text-indigo-600 font-bold bg-indigo-50 px-1.5 py-0.5 rounded sketched-border-alt cursor-pointer hover:bg-indigo-100">#$1</span>');
+
     return safeText;
 };
+
+// --- EXTRACT HASHTAGS FOR HORIZONTAL BAR ---
+function extractTagsFromText(text) {
+    if (!text) return [];
+    const matches = text.match(/#([a-zA-Z][\w\-]*)/g);
+    if (!matches) return [];
+    return [...new Set(matches.map(t => t.substring(1)))];
+}
 
 const showError = (msg) => { UI.err.textContent = msg; UI.err.classList.remove('hidden'); setTimeout(() => UI.err.classList.add('hidden'), 4000); };
 const setTimeGreeting = () => { const hr = new Date().getHours(); document.getElementById('greeting-text').textContent = hr < 12 ? 'Good Morning!' : hr < 18 ? 'Good Afternoon!' : 'Good Evening!'; };
@@ -260,7 +361,7 @@ const currentMonth = new Date().getMonth();
 if (currentMonth === 9) { UI.themeSel.value = 'theme-halloween'; UI.themeSel.dispatchEvent(new Event('change')); }
 else if (currentMonth === 11) { UI.themeSel.value = 'theme-xmas'; UI.themeSel.dispatchEvent(new Event('change')); }
 
-// Robust Anonymous Guest Mode Login[cite: 3]
+// Guest Login
 document.getElementById('btn-guest').onclick = async () => {
     document.getElementById('auth-loading').classList.remove('hidden');
     try {
@@ -269,6 +370,7 @@ document.getElementById('btn-guest').onclick = async () => {
         await setDoc(doc(db, "users", cred.user.uid), { 
             username: guestName, role: 'guest', suspended: false, emoji: '👀', bio: 'Browsing as guest', following: [], lastActive: serverTimestamp() 
         }, { merge: true });
+        trackWriteCredit(1);
     } catch (e) {
         document.getElementById('auth-loading').classList.add('hidden');
         showError("Guest login failed (Ensure Anonymous auth is enabled in Firebase console): " + e.message);
@@ -279,15 +381,17 @@ document.getElementById('btn-register').onclick = async () => {
     const u = document.getElementById('auth-username').value.trim().toLowerCase().replace(/\s+/g, '');
     const p = document.getElementById('auth-password').value;
     if (u.length < 3 || p.length < 6) return showError("Username min 3 chars, password min 6 chars.");
-    document.getElementById('auth-loading').classList.add('hidden');
+    document.getElementById('auth-loading').classList.remove('hidden');
     isRegistering = true; 
     try {
         const usernameDoc = await getDoc(doc(db, "usernames", u));
+        trackReadCredit(1);
         if (usernameDoc.exists()) { isRegistering = false; document.getElementById('auth-loading').classList.add('hidden'); return showError("Username is already taken."); }
         const cred = await createUserWithEmailAndPassword(auth, `${u}@notebook.local`, p);
         const role = SUPER_ADMINS.includes(u) ? 'super_admin' : 'user';
         await setDoc(doc(db, "usernames", u), { uid: cred.user.uid });
         await setDoc(doc(db, "users", cred.user.uid), { username: u, role: role, suspended: false, emoji: '👤', bio: '', following: [], lastActive: serverTimestamp() });
+        trackWriteCredit(2);
         isRegistering = false; syncUserProfile(cred.user);
     } catch (e) { isRegistering = false; document.getElementById('auth-loading').classList.add('hidden'); showError(e.message); }
 };
@@ -312,14 +416,20 @@ document.getElementById('btn-logout-launch').onclick = async () => {
     try { await signOut(auth); } catch (e) { console.warn("Sign out note:", e); }
 };
 
+// --- FASTER PRESENCE HEARTBEAT (10-second updates for online count) ---
 function startPresenceHeartbeat(uid) {
     if (presenceInterval) clearInterval(presenceInterval);
+    
     const updatePresence = async () => {
         if (!currentUser || !uid) return;
-        try { await updateDoc(doc(db, "users", uid), { lastActive: serverTimestamp() }); } catch (e) { console.warn("Presence heartbeat error:", e); }
+        try { 
+            await updateDoc(doc(db, "users", uid), { lastActive: serverTimestamp() }); 
+            trackWriteCredit(1);
+        } catch (e) { console.warn("Presence heartbeat note:", e); }
     };
+    
     updatePresence();
-    presenceInterval = setInterval(updatePresence, 30000);
+    presenceInterval = setInterval(updatePresence, 10000);
 
     if (unsubPresence) unsubPresence();
     unsubPresence = onSnapshot(collection(db, "users"), (snapshot) => {
@@ -329,11 +439,13 @@ function startPresenceHeartbeat(uid) {
             const data = docSnap.data();
             if (data.lastActive) {
                 const lastTime = data.lastActive.toDate ? data.lastActive.toDate().getTime() : 0;
-                if ((now - lastTime) < 60000) activeCount++;
+                if ((now - lastTime) < 25000) activeCount++;
             }
         });
+        activeOnlineUsersCount = Math.max(1, activeCount);
         const badge = document.getElementById('online-counter-badge');
-        if (badge) badge.textContent = `🟢 ${Math.max(1, activeCount)} online`;
+        if (badge) badge.textContent = `🟢 ${activeOnlineUsersCount} online`;
+        checkDatabaseUsageLimits();
     });
 }
 
@@ -386,9 +498,15 @@ function syncUserProfile(user) {
             startPresenceHeartbeat(user.uid);
             handleUrlRouting();
 
-            onSnapshot(doc(db, "app_settings", "launch_screen"), (d) => { document.getElementById('launch-board-text').textContent = d.exists() ? d.data().text : "Welcome to the study group!"; });
+            onSnapshot(doc(db, "app_settings", "launch_screen"), (d) => { 
+                document.getElementById('launch-board-text').textContent = d.exists() ? d.data().text : "Welcome to the study group!"; 
+            });
             onSnapshot(doc(db, "app_settings", "global_settings"), (d) => { 
-                linksEnabledGlobally = d.exists() ? (d.data().linksEnabled !== false) : true;
+                if (d.exists()) {
+                    const data = d.data();
+                    linksEnabledGlobally = (data.linksEnabled !== false);
+                    if (data.forceCreditMode !== undefined) isCreditModeActive = data.forceCreditMode;
+                }
                 const linkBtn = document.getElementById('btn-toggle-global-links');
                 if(linkBtn) linkBtn.className = linksEnabledGlobally ? "px-3 py-1 font-bold text-white bg-emerald-500 rounded sketched-border" : "px-3 py-1 font-bold text-white bg-rose-500 rounded sketched-border";
                 if(linkBtn) linkBtn.textContent = linksEnabledGlobally ? "Links: ON" : "Links: OFF";
@@ -465,6 +583,7 @@ async function selectEmoji(selectedEmoji) {
     document.getElementById('btn-open-emoji-picker').textContent = selectedEmoji;
     userProfile.emoji = selectedEmoji; emojiModal.classList.add('hidden');
     await updateDoc(doc(db, "users", currentUser.uid), { emoji: selectedEmoji });
+    trackWriteCredit(1);
 }
 document.getElementById('btn-save-custom-emoji').onclick = () => { const custom = document.getElementById('custom-emoji-input').value.trim(); if (custom) selectEmoji(custom); };
 
@@ -472,6 +591,7 @@ document.getElementById('launch-bio').onblur = async (e) => {
     if (userProfile?.role === 'guest') return;
     userProfile.bio = e.target.value.trim(); 
     await updateDoc(doc(db, "users", currentUser.uid), { bio: userProfile.bio }); 
+    trackWriteCredit(1);
 };
 document.getElementById('btn-edit-board').onclick = async () => { const txt = prompt("New notice board text:"); if(txt !== null) await setDoc(doc(db, "app_settings", "launch_screen"), { text: txt }); };
 
@@ -511,8 +631,11 @@ document.getElementById('user-badge').onclick = () => { if(currentUser) showProf
 
 function loadMessages() {
     if (unsubMsg) unsubMsg(); isInitialLoadDone = false;
-    unsubMsg = onSnapshot(query(collection(db, `rooms/${ROOM_ID}/messages`), orderBy("createdAt", "asc")), 
+    const itemLimit = isCreditModeActive ? 25 : 60;
+
+    unsubMsg = onSnapshot(query(collection(db, `rooms/${ROOM_ID}/messages`), orderBy("createdAt", "asc"), limit(itemLimit)), 
         (snapshot) => {
+            trackReadCredit(snapshot.docs.length);
             document.getElementById('chat-loading').classList.add('hidden'); UI.msgContainer.innerHTML = '';
             const pinnedList = [];
             snapshot.forEach(docSnap => {
@@ -558,17 +681,19 @@ window.jumpToMessage = (id) => {
 window.togglePin = async (id, shouldPin) => {
     if (!userProfile || userProfile.role !== 'super_admin') return;
     if (shouldPin && currentPinnedCount >= 5) return alert("Maximum 5 notes can be pinned! Unpin one first.");
-    try { await updateDoc(doc(db, `rooms/${ROOM_ID}/messages`, id), { isPinned: shouldPin }); } catch (e) { console.error("Pin error:", e); }
+    try { await updateDoc(doc(db, `rooms/${ROOM_ID}/messages`, id), { isPinned: shouldPin }); trackWriteCredit(1); } catch (e) { console.error("Pin error:", e); }
 };
 
 async function sendMessage(text) {
     if (!currentUser || (userProfile && userProfile.suspended) || (userProfile && userProfile.role === 'guest')) return;
+    if (isCreditModeActive && userWriteCredits <= 0) return alert("Write quota depleted for Credit Mode. Please wait a moment.");
     try {
         if (settings.soundEnabled) { writeSound.currentTime = 0; writeSound.play().catch(e => console.warn("Audio blocked:", e)); }
         await addDoc(collection(db, `rooms/${ROOM_ID}/messages`), {
             senderId: currentUser.uid, senderName: userProfile.username, senderEmoji: userProfile.emoji || '👤',
             text: text, createdAt: serverTimestamp(), isDeleted: false, isPinned: false
         });
+        trackWriteCredit(1);
         UI.input.value = ''; updateInput();
     } catch (e) { console.error("Send error:", e); }
 }
@@ -578,7 +703,30 @@ const updateInput = () => { if(userProfile?.role === 'guest') return; UI.sendBtn
 UI.input.addEventListener('input', updateInput);
 
 window.deleteMsg = async (roomId, msgId) => { 
-    if(confirm("Rip out this note?")) { await updateDoc(doc(db, `rooms/${roomId}/messages`, msgId), { isDeleted: true, deletedBy: userProfile.username, text: "", isPinned: false }); }
+    if(confirm("Rip out this note?")) { 
+        await updateDoc(doc(db, `rooms/${roomId}/messages`, msgId), { isDeleted: true, deletedBy: userProfile.username, text: "", isPinned: false }); 
+        trackWriteCredit(1);
+    }
+};
+
+// --- RENDER MESSAGE WITH TRUNCATION & TAG BAR ---
+window.toggleExpandMessage = (msgId) => {
+    const fullEl = document.getElementById(`msg-full-${msgId}`);
+    const truncEl = document.getElementById(`msg-trunc-${msgId}`);
+    const tagBarEl = document.getElementById(`msg-tagbar-${msgId}`);
+    const btnEl = document.getElementById(`msg-expand-btn-${msgId}`);
+
+    if (fullEl.classList.contains('hidden')) {
+        fullEl.classList.remove('hidden');
+        truncEl.classList.add('hidden');
+        if (tagBarEl) tagBarEl.classList.add('hidden');
+        btnEl.textContent = 'Show Less ▲';
+    } else {
+        fullEl.classList.add('hidden');
+        truncEl.classList.remove('hidden');
+        if (tagBarEl) tagBarEl.classList.remove('hidden');
+        btnEl.textContent = 'Show More ▼';
+    }
 };
 
 function renderMessage(id, data, containerEl, roomStr) {
@@ -587,17 +735,34 @@ function renderMessage(id, data, containerEl, roomStr) {
     const canDelete = isSelf || (roomStr === ROOM_ID && userProfile && ['super_admin', 'admin'].includes(userProfile.role));
     const timeStr = data.createdAt ? data.createdAt.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '...';
     
-    let displayHtml = '';
     let bgClass = isSelf ? 'bg-yellow-100' : 'bg-white';
     if (roomStr.startsWith('dm_')) {
         bgClass = isSelf ? 'bg-blue-100 border-blue-300' : 'bg-white border-amber-200';
     }
     
+    let contentHtml = '';
+    const textRaw = data.text || '';
+    const tags = extractTagsFromText(textRaw);
+    const isLong = textRaw.length > 180;
+
     if (data.isDeleted) {
-        displayHtml = `<span class="italic text-slate-500 text-lg opacity-80">✂ Ripped out by ${escapeHTML(data.deletedBy)}</span>`;
+        contentHtml = `<span class="italic text-slate-500 text-lg opacity-80">✂ Ripped out by ${escapeHTML(data.deletedBy)}</span>`;
         bgClass = 'bg-slate-200/50 border-slate-300'; 
+    } else if (isLong) {
+        const truncatedText = textRaw.substring(0, 180) + '...';
+        const tagBarHtml = tags.length > 0 ? `
+            <div id="msg-tagbar-${id}" class="flex gap-1.5 overflow-x-auto py-1 mt-1 border-t border-slate-200/60 no-scrollbar">
+                ${tags.map(t => `<span onclick="event.stopPropagation(); filterByTag('${t}')" class="text-xs font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded sketched-border-alt shrink-0 cursor-pointer hover:bg-indigo-100">#${escapeHTML(t)}</span>`).join('')}
+            </div>` : '';
+
+        contentHtml = `
+            <div id="msg-trunc-${id}">${parseTagsAndLinks(truncatedText)}</div>
+            <div id="msg-full-${id}" class="hidden">${parseTagsAndLinks(textRaw)}</div>
+            ${tagBarHtml}
+            <button id="msg-expand-btn-${id}" onclick="event.stopPropagation(); toggleExpandMessage('${id}')" class="text-xs font-bold text-indigo-600 hover:underline mt-1 block">Show More ▼</button>
+        `;
     } else {
-        displayHtml = parseTagsAndLinks(data.text);
+        contentHtml = parseTagsAndLinks(textRaw);
     }
 
     const pinBtn = (roomStr === ROOM_ID && isSuperAdmin && !data.isDeleted) ? `<button onclick="togglePin('${id}', ${!data.isPinned})" class="bg-amber-100 text-amber-800 rounded-full w-6 h-6 text-xs flex items-center justify-center hover:scale-110 sketched-border" title="${data.isPinned ? 'Unpin' : 'Pin'}">📌</button>` : '';
@@ -611,7 +776,7 @@ function renderMessage(id, data, containerEl, roomStr) {
     const wrapper = document.createElement('div');
     wrapper.id = `msg-${id}`; 
     wrapper.className = `group flex flex-col gap-1 max-w-[85%] animate-pop relative transition-all duration-300 ${isSelf ? 'self-end items-end' : 'self-start items-start ' + marginIndentClass}`;
-    wrapper.innerHTML = `${header}${pinnedBadge}<div class="${bgClass} text-slate-800 p-2.5 text-2xl sketched-border relative break-words shadow-xs">${displayHtml} ${actionControls}</div><span class="text-xs font-bold opacity-60 px-1 mt-0.5">${timeStr}</span>`;
+    wrapper.innerHTML = `${header}${pinnedBadge}<div class="${bgClass} text-slate-800 p-2.5 text-2xl sketched-border relative break-words shadow-xs">${contentHtml} ${actionControls}</div><span class="text-xs font-bold opacity-60 px-1 mt-0.5">${timeStr}</span>`;
     containerEl.appendChild(wrapper);
 }
 
@@ -646,6 +811,7 @@ window.toggleFollow = async (targetUid) => {
         } else {
             await updateDoc(userRef, { following: arrayUnion(targetUid) });
         }
+        trackWriteCredit(1);
         if (activeProfileUid) showProfile(activeProfileUid);
         if (!dmDirModal.classList.contains('hidden')) renderUserDirectory(allUsersCache);
     } catch(e) { console.error("Follow error:", e); }
@@ -728,11 +894,13 @@ window.showProfile = async (uid) => {
     const dmBtn = document.getElementById('p-modal-dm-btn');
     const followBtn = document.getElementById('p-modal-follow-btn');
     const createBox = document.getElementById('create-post-box');
+    const deleteAccountBox = document.getElementById('delete-account-container');
     
     if(currentUser && uid === currentUser.uid && userProfile?.role !== 'guest') {
         dmBtn.classList.add('hidden');
         followBtn.classList.add('hidden');
         createBox.classList.remove('hidden');
+        deleteAccountBox.classList.remove('hidden');
     } else {
         if(userProfile?.role !== 'guest' && currentUser) dmBtn.classList.remove('hidden');
         else dmBtn.classList.add('hidden');
@@ -741,6 +909,7 @@ window.showProfile = async (uid) => {
         else followBtn.classList.add('hidden');
 
         createBox.classList.add('hidden');
+        deleteAccountBox.classList.add('hidden');
         
         if (currentUser) {
             const isFollowing = (userProfile.following || []).includes(uid);
@@ -754,6 +923,7 @@ window.showProfile = async (uid) => {
 
     try {
         const snap = await getDoc(doc(db, "users", uid));
+        trackReadCredit(1);
         if(snap.exists()) {
             const p = snap.data();
             document.getElementById('p-modal-emoji').textContent = p.emoji || '👤';
@@ -766,6 +936,7 @@ window.showProfile = async (uid) => {
 
             const followersSnap = await getDocs(query(collection(db, "users"), where("following", "array-contains", uid)));
             const userPostsSnap = await getDocs(collection(db, `users/${uid}/posts`));
+            trackReadCredit(followersSnap.size + userPostsSnap.size);
             
             document.getElementById('p-modal-followers-count').textContent = `${followersSnap.size} Followers`;
 
@@ -786,6 +957,29 @@ window.showProfile = async (uid) => {
         loadProfilePosts(uid);
     } catch (e) { console.error("Profile fetch error:", e); }
 };
+
+// --- ACCOUNT SELF-DELETION HANDLER ---
+document.getElementById('btn-delete-account')?.addEventListener('click', async () => {
+    if (!currentUser || userProfile?.role === 'guest') return;
+    const confirmName = prompt(`Type your username (${userProfile.username}) to confirm PERMANENT ACCOUNT DELETION:`);
+    if (confirmName !== userProfile.username) return alert("Username did not match. Account deletion cancelled.");
+
+    try {
+        const uid = currentUser.uid;
+        const uname = userProfile.username;
+
+        await deleteDoc(doc(db, "usernames", uname)).catch(() => {});
+        await deleteDoc(doc(db, "users", uid)).catch(() => {});
+        trackWriteCredit(2);
+
+        await deleteUser(currentUser);
+        alert("Account deleted permanently.");
+        window.location.reload();
+    } catch(e) {
+        console.error("Delete account error:", e);
+        alert("Account deletion failed. Please re-log in and try again: " + e.message);
+    }
+});
 
 document.getElementById('profile-close').onclick = () => {
     document.getElementById('profile-modal').classList.add('hidden');
@@ -815,6 +1009,7 @@ window.deletePost = async (postOwnerUid, postId) => {
         try {
             await deleteDoc(doc(db, `users/${postOwnerUid}/posts/${postId}`));
             await deleteDoc(doc(db, `global_posts`, postId)).catch(() => {});
+            trackWriteCredit(2);
         } catch(e) {
             console.error("Delete post error:", e);
             alert("Could not delete post.");
@@ -825,6 +1020,7 @@ window.deletePost = async (postOwnerUid, postId) => {
 function loadProfilePosts(uid) {
     if(unsubProfilePosts) unsubProfilePosts();
     unsubProfilePosts = onSnapshot(query(collection(db, `users/${uid}/posts`), orderBy("createdAt", "desc")), (snapshot) => {
+        trackReadCredit(snapshot.docs.length);
         const listEl = document.getElementById('profile-posts-list');
         listEl.innerHTML = '';
         if(snapshot.empty) { listEl.innerHTML = '<div class="text-center text-slate-500 italic mt-4">No posts yet.</div>'; return; }
@@ -865,9 +1061,31 @@ function renderPostCard(postId, post, ownerUid, containerEl, canDelete) {
     const shareUrl = `${window.location.origin}${window.location.pathname}?post=${postId}`;
     const voteDisabled = !currentUser || userProfile?.role === 'guest' ? 'opacity-60 pointer-events-none' : '';
 
+    const textRaw = post.text || '';
+    const tags = extractTagsFromText(textRaw);
+    const isLong = textRaw.length > 180;
+
+    let bodyContentHtml = '';
+    if (isLong) {
+        const truncatedText = textRaw.substring(0, 180) + '...';
+        const tagBarHtml = tags.length > 0 ? `
+            <div id="post-tagbar-${postId}" class="flex gap-1.5 overflow-x-auto py-1 mt-1 border-t border-slate-200/60 no-scrollbar">
+                ${tags.map(t => `<span onclick="event.stopPropagation(); filterByTag('${t}')" class="text-xs font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded sketched-border-alt shrink-0 cursor-pointer hover:bg-indigo-100">#${escapeHTML(t)}</span>`).join('')}
+            </div>` : '';
+
+        bodyContentHtml = `
+            <div id="post-trunc-${postId}">${parseTagsAndLinks(truncatedText)}</div>
+            <div id="post-full-${postId}" class="hidden">${parseTagsAndLinks(textRaw)}</div>
+            ${tagBarHtml}
+            <button id="post-expand-btn-${postId}" onclick="event.stopPropagation(); toggleExpandPost('${postId}')" class="text-xs font-bold text-indigo-600 hover:underline mt-1 block">Show More ▼</button>
+        `;
+    } else {
+        bodyContentHtml = parseTagsAndLinks(textRaw);
+    }
+
     div.innerHTML = `
         ${authorHeader}
-        <div class="text-lg text-slate-800 break-words my-1 font-['Patrick_Hand'] leading-relaxed">${parseTagsAndLinks(post.text)}</div>
+        <div class="text-lg text-slate-800 break-words my-1 font-['Patrick_Hand'] leading-relaxed">${bodyContentHtml}</div>
         ${doodleImgHtml}
         <div class="flex justify-between items-center text-xs border-t border-slate-200/60 pt-2 mt-1 flex-wrap gap-2">
             <div class="flex items-center gap-2">
@@ -883,6 +1101,25 @@ function renderPostCard(postId, post, ownerUid, containerEl, canDelete) {
     `;
     containerEl.appendChild(div);
 }
+
+window.toggleExpandPost = (postId) => {
+    const fullEl = document.getElementById(`post-full-${postId}`);
+    const truncEl = document.getElementById(`post-trunc-${postId}`);
+    const tagBarEl = document.getElementById(`post-tagbar-${postId}`);
+    const btnEl = document.getElementById(`post-expand-btn-${postId}`);
+
+    if (fullEl.classList.contains('hidden')) {
+        fullEl.classList.remove('hidden');
+        truncEl.classList.add('hidden');
+        if (tagBarEl) tagBarEl.classList.add('hidden');
+        btnEl.textContent = 'Show Less ▲';
+    } else {
+        fullEl.classList.add('hidden');
+        truncEl.classList.remove('hidden');
+        if (tagBarEl) tagBarEl.classList.remove('hidden');
+        btnEl.textContent = 'Show More ▼';
+    }
+};
 
 window.exportPostAsImage = (elementId) => {
     const cardEl = document.getElementById(elementId);
@@ -904,6 +1141,7 @@ window.exportPostAsImage = (elementId) => {
 
 document.getElementById('btn-publish-post').onclick = async () => {
     if (userProfile?.role === 'guest') return;
+    if (isCreditModeActive && userWriteCredits <= 0) return alert("Write quota depleted for Credit Mode.");
     const input = document.getElementById('post-input');
     const txt = input.value.trim();
     if(!txt && !attachedDoodleBase64) return;
@@ -922,6 +1160,7 @@ document.getElementById('btn-publish-post').onclick = async () => {
 
         const docRef = await addDoc(collection(db, `users/${currentUser.uid}/posts`), postData);
         await setDoc(doc(db, `global_posts`, docRef.id), postData);
+        trackWriteCredit(2);
 
         input.value = '';
         attachedDoodleBase64 = null;
@@ -934,6 +1173,7 @@ window.togglePostVote = async (postOwnerUid, postId, type) => {
     const postRef = doc(db, `users/${postOwnerUid}/posts`, postId);
     const globalRef = doc(db, `global_posts`, postId);
     const snap = await getDoc(postRef);
+    trackReadCredit(1);
     if(!snap.exists()) return;
     const data = snap.data();
     const uid = currentUser.uid;
@@ -949,6 +1189,7 @@ window.togglePostVote = async (postOwnerUid, postId, type) => {
     }
     await updateDoc(postRef, updates);
     await updateDoc(globalRef, updates).catch(() => {});
+    trackWriteCredit(2);
 };
 
 window.filterByTag = (tag) => {
@@ -956,15 +1197,14 @@ window.filterByTag = (tag) => {
     switchView('feed');
     document.getElementById('btn-clear-tag-filter').classList.remove('hidden');
     feedSearchInput.value = `#${tag}`;
-    const filtered = globalPostsCache.filter(p => p.text && p.text.toLowerCase().includes(`#${activeTagFilter}`));
-    renderFeedList(filtered, document.getElementById('global-feed-list'));
+    applyFeedFilterAndSort();
 };
 
 document.getElementById('btn-clear-tag-filter').onclick = () => {
     activeTagFilter = null;
     document.getElementById('btn-clear-tag-filter').classList.add('hidden');
     feedSearchInput.value = '';
-    renderFeedList(globalPostsCache, document.getElementById('global-feed-list'));
+    applyFeedFilterAndSort();
 };
 
 function loadGlobalFeed(scrollToPostId = null) {
@@ -972,7 +1212,10 @@ function loadGlobalFeed(scrollToPostId = null) {
     const container = document.getElementById('global-feed-list');
     container.innerHTML = '<div class="text-center italic text-slate-500 mt-6">Ranking global notebook feed...</div>';
 
-    unsubFeed = onSnapshot(collection(db, "global_posts"), (snapshot) => {
+    const itemLimit = isCreditModeActive ? 30 : 100;
+
+    unsubFeed = onSnapshot(query(collection(db, "global_posts"), limit(itemLimit)), (snapshot) => {
+        trackReadCredit(snapshot.docs.length);
         container.innerHTML = '';
         if (snapshot.empty) {
             container.innerHTML = '<div class="text-center italic text-slate-500 mt-6">No public posts in the global feed yet.</div>';
@@ -980,27 +1223,12 @@ function loadGlobalFeed(scrollToPostId = null) {
         }
 
         globalPostsCache = [];
-        const now = Date.now();
-
         snapshot.forEach(docSnap => {
             const p = docSnap.data();
-            const likesCount = (p.likes || []).length;
-            const dislikesCount = (p.dislikes || []).length;
-            const timestamp = p.createdAt ? p.createdAt.toDate().getTime() : now;
-            
-            const ageHours = (now - timestamp) / (1000 * 60 * 60);
-            const recencyScore = Math.max(0, 100 - (ageHours * 2));
-            const engagementScore = (likesCount * 10) - (dislikesCount * 5);
-            const socialBoost = currentUser && (userProfile.following || []).includes(p.authorId) ? 50 : 0;
-
-            const totalScore = recencyScore + engagementScore + socialBoost;
-
-            globalPostsCache.push({ id: docSnap.id, ...p, score: totalScore });
+            globalPostsCache.push({ id: docSnap.id, ...p });
         });
 
-        globalPostsCache.sort((a, b) => b.score - a.score);
-
-        renderFeedList(globalPostsCache, container);
+        applyFeedFilterAndSort();
 
         if (scrollToPostId) {
             setTimeout(() => {
@@ -1015,6 +1243,56 @@ function loadGlobalFeed(scrollToPostId = null) {
     });
 }
 
+// --- SEARCH, COMBINED SORTING & DATE FILTERS ---
+function applyFeedFilterAndSort() {
+    const container = document.getElementById('global-feed-list');
+    if (!container) return;
+
+    const q = feedSearchInput?.value.trim().toLowerCase() || '';
+    const sortBy = document.getElementById('feed-sort-select')?.value || 'recent';
+    const dateFilter = document.getElementById('feed-date-select')?.value || 'all';
+
+    const now = Date.now();
+    const oneDayMs = 24 * 60 * 60 * 1000;
+    const oneWeekMs = 7 * oneDayMs;
+
+    let result = globalPostsCache.filter(p => {
+        const text = (p.text || '').toLowerCase();
+        const author = (p.authorName || '').toLowerCase();
+        const matchesQuery = !q || text.includes(q) || author.includes(q);
+
+        let matchesDate = true;
+        if (p.createdAt) {
+            const pTime = p.createdAt.toDate ? p.createdAt.toDate().getTime() : 0;
+            if (dateFilter === 'today') {
+                matchesDate = (now - pTime) <= oneDayMs;
+            } else if (dateFilter === 'week') {
+                matchesDate = (now - pTime) <= oneWeekMs;
+            }
+        }
+        return matchesQuery && matchesDate;
+    });
+
+    result.sort((a, b) => {
+        const aLikes = (a.likes || []).length;
+        const bLikes = (b.likes || []).length;
+        const aTime = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : 0) : 0;
+        const bTime = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : 0) : 0;
+
+        if (sortBy === 'popular') return bLikes - aLikes;
+        if (sortBy === 'unpopular') return aLikes - bLikes;
+        if (sortBy === 'oldest') return aTime - bTime;
+        return bTime - aTime; 
+    });
+
+    renderFeedList(result, container);
+}
+
+const feedSearchInput = document.getElementById('feed-search-input');
+if (feedSearchInput) feedSearchInput.oninput = applyFeedFilterAndSort;
+document.getElementById('feed-sort-select')?.addEventListener('change', applyFeedFilterAndSort);
+document.getElementById('feed-date-select')?.addEventListener('change', applyFeedFilterAndSort);
+
 function renderFeedList(posts, containerEl) {
     containerEl.innerHTML = '';
     if (posts.length === 0) {
@@ -1025,25 +1303,6 @@ function renderFeedList(posts, containerEl) {
         const canDelete = currentUser && (post.authorId === currentUser.uid || ['super_admin', 'admin'].includes(userProfile?.role));
         renderPostCard(post.id, post, post.authorId, containerEl, canDelete);
     });
-}
-
-const feedSearchInput = document.getElementById('feed-search-input');
-if (feedSearchInput) {
-    feedSearchInput.oninput = (e) => {
-        const q = e.target.value.trim().toLowerCase();
-        const container = document.getElementById('global-feed-list');
-        if (!q) {
-            activeTagFilter = null;
-            document.getElementById('btn-clear-tag-filter').classList.add('hidden');
-            renderFeedList(globalPostsCache, container);
-            return;
-        }
-        const filtered = globalPostsCache.filter(p => 
-            (p.text && p.text.toLowerCase().includes(q)) || 
-            (p.authorName && p.authorName.toLowerCase().includes(q))
-        );
-        renderFeedList(filtered, container);
-    };
 }
 
 window.setStickyColor = (color) => {
@@ -1058,6 +1317,7 @@ window.setStickyColor = (color) => {
 
 document.getElementById('btn-publish-sticky').onclick = async () => {
     if (userProfile?.role === 'guest') return;
+    if (isCreditModeActive && userWriteCredits <= 0) return alert("Write quota depleted for Credit Mode.");
     const input = document.getElementById('sticky-input');
     const txt = input.value.trim();
     if(!txt) return;
@@ -1071,6 +1331,7 @@ document.getElementById('btn-publish-sticky').onclick = async () => {
             authorId: currentUser.uid,
             createdAt: serverTimestamp()
         });
+        trackWriteCredit(1);
         input.value = '';
     } catch(e) { console.error("Sticky note error:", e); }
 };
@@ -1083,7 +1344,8 @@ function loadStickyNotes() {
     const grid = document.getElementById('sticky-board-grid');
     grid.innerHTML = '<div class="text-center italic text-slate-500 col-span-full">Pinning sticky notes...</div>';
 
-    unsubSticky = onSnapshot(query(collection(db, "sticky_board"), orderBy("createdAt", "desc")), (snapshot) => {
+    unsubSticky = onSnapshot(query(collection(db, "sticky_board"), orderBy("createdAt", "desc"), limit(40)), (snapshot) => {
+        trackReadCredit(snapshot.docs.length);
         grid.innerHTML = '';
         if (snapshot.empty) {
             grid.innerHTML = '<div class="text-center italic text-slate-500 col-span-full">No sticky notes on the board yet. Be the first to pin one!</div>';
@@ -1122,7 +1384,10 @@ function loadStickyNotes() {
 
 window.deleteStickyNote = async (id) => {
     if (confirm("Take down this sticky note?")) {
-        try { await deleteDoc(doc(db, "sticky_board", id)); } catch(e) { console.error("Delete sticky error:", e); }
+        try { 
+            await deleteDoc(doc(db, "sticky_board", id)); 
+            trackWriteCredit(1);
+        } catch(e) { console.error("Delete sticky error:", e); }
     }
 };
 
@@ -1143,6 +1408,7 @@ document.getElementById('btn-save-puzzle').onclick = async () => {
             authorName: userProfile.username,
             createdAt: serverTimestamp()
         });
+        trackWriteCredit(1);
         document.getElementById('puzzle-title-input').value = '';
         document.getElementById('puzzle-code-input').value = '';
         puzzleModal.classList.add('hidden');
@@ -1155,7 +1421,8 @@ function loadArcadePuzzles() {
     const arcadeList = document.getElementById('arcade-list');
     arcadeList.innerHTML = '<div class="text-center italic text-slate-500">Loading arcade games...</div>';
 
-    unsubPuzzles = onSnapshot(query(collection(db, "puzzles"), orderBy("createdAt", "desc")), (snapshot) => {
+    unsubPuzzles = onSnapshot(query(collection(db, "puzzles"), orderBy("createdAt", "desc"), limit(20)), (snapshot) => {
+        trackReadCredit(snapshot.docs.length);
         arcadeList.innerHTML = '';
         if (snapshot.empty) {
             arcadeList.innerHTML = '<div class="text-center italic text-slate-500 col-span-2">No puzzles or game snippets published yet.</div>';
@@ -1166,9 +1433,9 @@ function loadArcadePuzzles() {
         snapshot.forEach(docSnap => {
             const puzzle = docSnap.data();
             const div = document.createElement('div');
-            div.className = "bg-white p-3 sketched-border flex flex-col gap-2 cursor-pointer hover:bg-amber-50 transition-colors shadow-xs";
+            div.className = "bg-white p-3 sketched-border flex flex-col gap-2 cursor-pointer hover:bg-amber-50 transition-colors shadow-xs shrink-0 w-48";
             div.innerHTML = `
-                <div class="font-bold text-lg text-indigo-700">${escapeHTML(puzzle.title)}</div>
+                <div class="font-bold text-lg text-indigo-700 truncate">${escapeHTML(puzzle.title)}</div>
                 <div class="text-xs text-slate-500 italic">By @${escapeHTML(puzzle.authorName || 'admin')}</div>
                 <button class="mt-1 bg-emerald-500 text-white font-bold py-1 px-2 rounded sketched-border-alt text-sm hover:bg-emerald-600">Play / Run ➔</button>
             `;
@@ -1232,10 +1499,15 @@ document.getElementById('btn-open-dms').onclick = async () => {
     list.innerHTML = '<div class="text-center p-4 italic text-slate-500">Checking mailbox directory...</div>';
     try {
         const snap = await getDocs(collection(db, "users"));
+        trackReadCredit(snap.docs.length);
         allUsersCache = [];
+        
+        // --- HIDE GUEST ACCOUNTS FROM MAILBOX DIRECTORY ---
         snap.forEach(d => {
-            if(!currentUser || d.id !== currentUser.uid) {
-                allUsersCache.push({ id: d.id, ...d.data() });
+            const data = d.data();
+            const isGuest = data.role === 'guest' || (data.username && data.username.startsWith('guest_'));
+            if ((!currentUser || d.id !== currentUser.uid) && !isGuest) {
+                allUsersCache.push({ id: d.id, ...data });
             }
         });
         document.getElementById('dm-following-tab-count').textContent = (userProfile?.following || []).length;
@@ -1258,7 +1530,7 @@ function renderUserDirectory(users) {
     });
 
     if (filtered.length === 0) {
-        list.innerHTML = `<div class="text-center p-6 text-slate-400 italic">${activeDmTab === 'following' ? 'You are not following anyone yet.' : 'No notebook owners found.'}</div>`;
+        list.innerHTML = `<div class="text-center p-6 text-slate-400 italic">${activeDmTab === 'following' ? 'You are not following anyone yet.' : 'No notebook members found.'}</div>`;
         return;
     }
 
@@ -1290,9 +1562,7 @@ function renderUserDirectory(users) {
 }
 
 const searchEl = document.getElementById('dm-search-input');
-if (searchEl) {
-    searchEl.oninput = () => renderUserDirectory(allUsersCache);
-}
+if (searchEl) searchEl.oninput = () => renderUserDirectory(allUsersCache);
 
 function openDmChat(targetUid, targetName, targetEmoji, targetBio) {
     document.getElementById('profile-modal').classList.add('hidden');
@@ -1339,7 +1609,8 @@ function loadDmMessages() {
     const container = document.getElementById('dm-messages-container');
     container.innerHTML = '<div class="text-center mt-6 font-bold text-slate-500 italic">Opening notebook letter...</div>';
     
-    unsubDmMsg = onSnapshot(query(collection(db, `rooms/${activeDmId}/messages`), orderBy("createdAt", "asc")), (snapshot) => {
+    unsubDmMsg = onSnapshot(query(collection(db, `rooms/${activeDmId}/messages`), orderBy("createdAt", "asc"), limit(50)), (snapshot) => {
+        trackReadCredit(snapshot.docs.length);
         container.innerHTML = '';
         if(snapshot.empty) { 
             const targetName = activeDmTargetUser?.username || 'user';
@@ -1360,12 +1631,14 @@ function loadDmMessages() {
 dmSendBtn.onclick = async () => {
     const text = dmInput.value.trim();
     if(!text || !activeDmId || userProfile.suspended || userProfile.role === 'guest') return;
+    if (isCreditModeActive && userWriteCredits <= 0) return alert("Write quota depleted for Credit Mode.");
     try {
         if (settings.soundEnabled) { writeSound.currentTime = 0; writeSound.play().catch(e=>e); }
         await addDoc(collection(db, `rooms/${activeDmId}/messages`), {
             senderId: currentUser.uid, senderName: userProfile.username, senderEmoji: userProfile.emoji || '👤',
             text: text, createdAt: serverTimestamp(), isDeleted: false, isPinned: false
         });
+        trackWriteCredit(1);
 
         if (activeDmTargetId) {
             await addDoc(collection(db, `users/${activeDmTargetId}/notifications`), {
@@ -1376,6 +1649,7 @@ dmSendBtn.onclick = async () => {
                 type: 'dm',
                 roomId: activeDmId
             }).catch(e => console.warn("DM notification dispatch error:", e));
+            trackWriteCredit(1);
         }
 
         dmInput.value = ''; updateDmInput();
@@ -1391,6 +1665,7 @@ UI.adminBtn.onclick = async () => {
     document.getElementById('storage-status-text').textContent = "Database status: Healthy. Estimated cache size: ~1.4 MB. 0 Doodle items flagged for cleanup.";
     try {
         const usersSnap = await getDocs(collection(db, "users")); list.innerHTML = '';
+        trackReadCredit(usersSnap.docs.length);
         usersSnap.forEach(docSnap => {
             const u = docSnap.data();
             const isTargetSuper = SUPER_ADMINS.includes(u.username);
@@ -1412,8 +1687,8 @@ UI.adminBtn.onclick = async () => {
     } catch (e) { list.innerHTML = `<span class="text-rose-600 font-bold">Failed to load user list.</span>`; }
 };
 document.getElementById('admin-close').onclick = () => adminModal.classList.add('hidden');
-window.toggleSuspend = async (uid, state) => { await updateDoc(doc(db, "users", uid), { suspended: state }); UI.adminBtn.click(); };
-window.toggleRole = async (uid, newRole) => { await updateDoc(doc(db, "users", uid), { role: newRole }); UI.adminBtn.click(); };
+window.toggleSuspend = async (uid, state) => { await updateDoc(doc(db, "users", uid), { suspended: state }); trackWriteCredit(1); UI.adminBtn.click(); };
+window.toggleRole = async (uid, newRole) => { await updateDoc(doc(db, "users", uid), { role: newRole }); trackWriteCredit(1); UI.adminBtn.click(); };
 
 document.getElementById('btn-run-storage-guardian').onclick = () => {
     alert("Storage Guardian Sweep complete! Scanned global posts and doodles. 0 redundant files found.");
@@ -1422,6 +1697,8 @@ document.getElementById('btn-run-storage-guardian').onclick = () => {
 
 document.getElementById('btn-toggle-global-links').onclick = async () => {
     if(userProfile.role !== 'super_admin') return alert("Super Admin required.");
-    try { await setDoc(doc(db, "app_settings", "global_settings"), { linksEnabled: !linksEnabledGlobally }, { merge: true }); }
-    catch(e) { console.error(e); }
+    try { 
+        await setDoc(doc(db, "app_settings", "global_settings"), { linksEnabled: !linksEnabledGlobally }, { merge: true }); 
+        trackWriteCredit(1);
+    } catch(e) { console.error(e); }
 };
