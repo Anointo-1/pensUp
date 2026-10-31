@@ -24,11 +24,6 @@ let globalPostsCache = [];
 let activeTagFilter = null;
 let presenceInterval = null;
 
-let activeOnlineUsersCount = 1;
-let isCreditModeActive = true; // Force credit mode active to protect quota limits
-let userReadCredits = 50;
-let userWriteCredits = 20;
-
 const ROOM_ID = "main-room";
 const SUPER_ADMINS = ['anoimazo1', 'anointo', 'amazo'];
 const ALL_EMOJIS = ['👤','👻','👾','🤖','👽','🐼','🦊','🦄','🐸','🐱','🐶','🦖','✏️','🎨','🔥','😎','🤠','🥳','🤡','👑','🎒','🎓','📚','💡','🚀','⭐','🌟','🌈','⚡','🎯','⚽','🎮','🍕','🍔','🌮','🍩','🍦','☕','🏀','🎸','🎧','🧩','🎲','🧸','🐉','🐙','🦋','🦁','🐯','🐻','🦉','🦅','🐺','🔮','🧿','💎','💰','🏆','🥇','🎖️'];
@@ -121,15 +116,6 @@ async function handleUrlRouting() {
         } catch (e) { console.warn("Router puzzle fetch error:", e); }
     } else if (profileUid) {
         showProfile(profileUid);
-    }
-}
-
-function updateCreditBannerUI() {
-    const banner = document.getElementById('credit-mode-banner');
-    const counter = document.getElementById('credit-counter');
-    if (banner && counter) {
-        banner.classList.remove('hidden');
-        counter.textContent = `Quota Active (Throttled)`;
     }
 }
 
@@ -272,7 +258,7 @@ document.getElementById('btn-register').onclick = async () => {
     const u = document.getElementById('auth-username').value.trim().toLowerCase().replace(/\s+/g, '');
     const p = document.getElementById('auth-password').value;
     if (u.length < 3 || p.length < 6) return showError("Username min 3 chars, password min 6 chars.");
-    document.getElementById('auth-loading').classList.remove('hidden');
+    document.getElementById('auth-loading').classList.add('hidden');
     isRegistering = true; 
     try {
         const usernameDoc = await getDoc(doc(db, "usernames", u));
@@ -304,6 +290,7 @@ document.getElementById('btn-logout-launch').onclick = async () => {
     try { await signOut(auth); } catch (e) {}
 };
 
+// --- OPTIMIZED PRESENCE HEARTBEAT (3-minute interval to prevent quota flood) ---
 function startPresenceHeartbeat(uid) {
     if (presenceInterval) clearInterval(presenceInterval);
     const updatePresence = async () => {
@@ -311,7 +298,7 @@ function startPresenceHeartbeat(uid) {
         try { await updateDoc(doc(db, "users", uid), { lastActive: serverTimestamp() }); } catch (e) {}
     };
     updatePresence();
-    presenceInterval = setInterval(updatePresence, 20000);
+    presenceInterval = setInterval(updatePresence, 180000); 
 
     if (unsubPresence) unsubPresence();
     unsubPresence = onSnapshot(collection(db, "users"), (snapshot) => {
@@ -321,7 +308,7 @@ function startPresenceHeartbeat(uid) {
             const data = docSnap.data();
             if (data.lastActive) {
                 const lastTime = data.lastActive.toDate ? data.lastActive.toDate().getTime() : 0;
-                if ((now - lastTime) < 30000) activeCount++;
+                if ((now - lastTime) < 200000) activeCount++;
             }
         });
         const badge = document.getElementById('online-counter-badge');
@@ -372,7 +359,6 @@ function syncUserProfile(user) {
             listenForNotifications(user.uid);
             startPresenceHeartbeat(user.uid);
             handleUrlRouting();
-            updateCreditBannerUI();
         }, 
         (error) => { document.getElementById('auth-loading').classList.add('hidden'); }
     );
@@ -497,9 +483,10 @@ document.getElementById('btn-enter-chat').onclick = () => {
 document.getElementById('btn-back-launch').onclick = () => { UI.app.classList.replace('flex', 'hidden'); UI.launch.classList.remove('hidden'); if(unsubMsg) unsubMsg(); };
 document.getElementById('user-badge').onclick = () => { if(currentUser) showProfile(currentUser.uid); };
 
+// --- STRICT LIMIT LOAD FOR CHAT TO CONSERVE QUOTA ---
 function loadMessages() {
     if (unsubMsg) unsubMsg(); isInitialLoadDone = false;
-    unsubMsg = onSnapshot(query(collection(db, `rooms/${ROOM_ID}/messages`), orderBy("createdAt", "asc"), limit(25)), 
+    unsubMsg = onSnapshot(query(collection(db, `rooms/${ROOM_ID}/messages`), orderBy("createdAt", "asc"), limit(15)), 
         (snapshot) => {
             document.getElementById('chat-loading').classList.add('hidden'); UI.msgContainer.innerHTML = '';
             const pinnedList = [];
@@ -795,7 +782,7 @@ window.deletePost = async (postOwnerUid, postId) => {
 
 function loadProfilePosts(uid) {
     if(unsubProfilePosts) unsubProfilePosts();
-    unsubProfilePosts = onSnapshot(query(collection(db, `users/${uid}/posts`), orderBy("createdAt", "desc"), limit(20)), (snapshot) => {
+    unsubProfilePosts = onSnapshot(query(collection(db, `users/${uid}/posts`), orderBy("createdAt", "desc"), limit(10)), (snapshot) => {
         const listEl = document.getElementById('profile-posts-list');
         if(!listEl) return;
         listEl.innerHTML = '';
@@ -946,13 +933,14 @@ document.getElementById('btn-clear-tag-filter')?.addEventListener('click', () =>
     applyFeedFilterAndSort();
 });
 
+// --- STRICT LIMIT LOAD FOR FEED TO CONSERVE QUOTA ---
 function loadGlobalFeed(scrollToPostId = null) {
     if (unsubFeed) unsubFeed();
     const container = document.getElementById('global-feed-list');
     if(!container) return;
     container.innerHTML = '<div class="text-center italic text-slate-500 mt-6">Ranking global notebook feed...</div>';
 
-    unsubFeed = onSnapshot(query(collection(db, "global_posts"), limit(30)), (snapshot) => {
+    unsubFeed = onSnapshot(query(collection(db, "global_posts"), limit(15)), (snapshot) => {
         container.innerHTML = '';
         if (snapshot.empty) { container.innerHTML = '<div class="text-center italic text-slate-500 mt-6">No public posts yet.</div>'; return; }
         globalPostsCache = [];
@@ -1045,7 +1033,7 @@ function loadStickyNotes() {
     if(!grid) return;
     grid.innerHTML = '<div class="text-center italic text-slate-500 col-span-full">Pinning sticky notes...</div>';
 
-    unsubSticky = onSnapshot(query(collection(db, "sticky_board"), orderBy("createdAt", "desc"), limit(20)), (snapshot) => {
+    unsubSticky = onSnapshot(query(collection(db, "sticky_board"), orderBy("createdAt", "desc"), limit(10)), (snapshot) => {
         grid.innerHTML = '';
         if (snapshot.empty) { grid.innerHTML = '<div class="text-center italic text-slate-500 col-span-full">No sticky notes yet.</div>'; return; }
         const colorClasses = {
@@ -1241,7 +1229,7 @@ function loadDmMessages() {
     if(!container) return;
     container.innerHTML = '<div class="text-center mt-6 font-bold text-slate-500 italic">Opening letter...</div>';
     
-    unsubDmMsg = onSnapshot(query(collection(db, `rooms/${activeDmId}/messages`), orderBy("createdAt", "asc"), limit(25)), (snapshot) => {
+    unsubDmMsg = onSnapshot(query(collection(db, `rooms/${activeDmId}/messages`), orderBy("createdAt", "asc"), limit(15)), (snapshot) => {
         container.innerHTML = '';
         if(snapshot.empty) { container.innerHTML = `<div class="text-center p-6 text-slate-500 italic">No private notes yet.</div>`; return; }
         snapshot.forEach(docSnap => renderMessage(docSnap.id, docSnap.data(), container, activeDmId));
