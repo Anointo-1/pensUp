@@ -336,7 +336,7 @@ onAuthStateChanged(auth, (user) => {
     if (isRegistering) return; 
     if (user) syncUserProfile(user);
     else {
-        currentUser = null; userProfile = null; document.getElementById('auth-loading'].classList.add('hidden');
+        currentUser = null; userProfile = null; document.getElementById('auth-loading').classList.add('hidden');
         UI.app.classList.replace('flex', 'hidden'); UI.launch.classList.add('hidden'); UI.auth.classList.remove('hidden');
         document.getElementById('auth-password').value = '';
         if (unsubNotifs) { unsubNotifs(); unsubNotifs = null; }
