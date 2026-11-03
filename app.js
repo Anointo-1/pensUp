@@ -284,6 +284,44 @@ function startPresenceHeartbeat(uid) {
     }, (err) => {});
 }
 
+async function handleUrlRouting() {
+    const params = new URLSearchParams(window.location.search);
+    const postId = params.get('post');
+    const puzzleId = params.get('puzzle');
+    const profileUid = params.get('profile');
+
+    if (postId) {
+        try {
+            const postSnap = await getDoc(doc(db, "global_posts", postId));
+            if (postSnap.exists()) {
+                const data = postSnap.data();
+                updateSEO({
+                    title: `Discussion by @${data.authorName}: "${data.text.substring(0, 30)}..."`,
+                    description: data.text || "Check out this handwritten note on PensUp Pro!",
+                    image: data.doodleImage || "https://anointo-1.github.io/pensUp/PensUp.jpg",
+                    authorName: data.authorName,
+                    datePublished: data.createdAt ? data.createdAt.toDate().toISOString() : new Date().toISOString()
+                });
+                switchView('feed');
+                loadGlobalFeed(postId);
+            }
+        } catch (e) { console.warn("Router post fetch error:", e); }
+    } else if (puzzleId) {
+        try {
+            const puzzleSnap = await getDoc(doc(db, "puzzles", puzzleId));
+            if (puzzleSnap.exists()) {
+                const data = puzzleSnap.data();
+                updateSEO({ title: `Play Arcade Game: ${data.title}`, description: `Play and run ${data.title} inside the PensUp Arcade!` });
+                switchView('arcade');
+                runPuzzleSnippet(data.title, data.code);
+            }
+        } catch (e) { console.warn("Router puzzle fetch error:", e); }
+    } else if (profileUid) {
+        showProfile(profileUid);
+    }
+}
+
+
 function syncUserProfile(user) {
     if (userDocUnsub) { userDocUnsub(); userDocUnsub = null; }
     userDocUnsub = onSnapshot(doc(db, "users", user.uid), 
