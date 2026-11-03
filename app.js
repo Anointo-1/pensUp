@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInAnonymously, onAuthStateChanged, signOut, deleteUser, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
-import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, setDoc, getDoc, updateDoc, getDocs, deleteDoc, arrayUnion, arrayRemove, where, limit } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, setDoc, getDoc, updateDoc, getDocs, deleteDoc, arrayUnion, arrayRemove, where, limit, startAfter } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyDgou5bwByER3Tw_lL-BX1n02dgAESYft0",
@@ -23,6 +23,8 @@ let currentStickyColor = 'yellow';
 let globalPostsCache = [];
 let activeTagFilter = null;
 let presenceInterval = null;
+let oldestMessageDoc = null;
+let lastVisibleFeedDoc = null;
 
 const ROOM_ID = "main-room";
 const SUPER_ADMINS = ['anoimazo1', 'anointo', 'amazo'];
@@ -42,81 +44,15 @@ let settings = {
     chatBoxLiftDm: localStorage.getItem('pensup_lift_dm') === 'true',
     forceToast: localStorage.getItem('pensup_force_toast') === 'true',
     dmToast: localStorage.getItem('pensup_dm_toast') !== 'false',
+    followToast: localStorage.getItem('pensup_follow_toast') !== 'false',
+    likeToast: localStorage.getItem('pensup_like_toast') !== 'false',
     soundEnabled: localStorage.getItem('pensup_sound') !== 'false',
     fullScreen: localStorage.getItem('pensup_fullscreen') === 'true'
 };
 
-function updateSEO({ title, description, image, url, authorName, datePublished }) {
-    if (title) {
-        document.title = `${title} | PensUp Pro`;
-        document.getElementById('og-title')?.setAttribute('content', title);
-        document.getElementById('tw-title')?.setAttribute('content', title);
-    }
-    if (description) {
-        const cleanDesc = description.substring(0, 160);
-        document.getElementById('meta-description')?.setAttribute('content', cleanDesc);
-        document.getElementById('og-description')?.setAttribute('content', cleanDesc);
-        document.getElementById('tw-description')?.setAttribute('content', cleanDesc);
-    }
-    if (image) document.getElementById('og-image')?.setAttribute('content', image);
-
-    let ldScript = document.getElementById('dynamic-schema');
-    if (!ldScript) {
-        ldScript = document.createElement('script');
-        ldScript.id = 'dynamic-schema';
-        ldScript.type = 'application/ld+json';
-        document.head.appendChild(ldScript);
-    }
-
-    const currentUrl = url || window.location.href;
-    const schemaData = {
-        "@context": "https://schema.org",
-        "@type": "DiscussionForumPosting",
-        "headline": title || "PensUp Pro - Handwritten Study Notes & Community",
-        "text": description || "Handwritten notes, chat, and community discussions on PensUp Pro.",
-        "datePublished": datePublished || "2026-02-01T00:00:00Z",
-        "url": currentUrl,
-        "author": { "@type": "Person", "name": authorName || "PensUp Community", "url": currentUrl }
-    };
-    if (image) schemaData.image = image;
-    ldScript.textContent = JSON.stringify(schemaData);
-}
-
-async function handleUrlRouting() {
-    const params = new URLSearchParams(window.location.search);
-    const postId = params.get('post');
-    const puzzleId = params.get('puzzle');
-    const profileUid = params.get('profile');
-
-    if (postId) {
-        try {
-            const postSnap = await getDoc(doc(db, "global_posts", postId));
-            if (postSnap.exists()) {
-                const data = postSnap.data();
-                updateSEO({
-                    title: `Discussion by @${data.authorName}: "${data.text.substring(0, 30)}..."`,
-                    description: data.text || "Check out this handwritten note on PensUp Pro!",
-                    image: data.doodleImage || "https://anointo-1.github.io/pensUp/PensUp.jpg",
-                    authorName: data.authorName,
-                    datePublished: data.createdAt ? data.createdAt.toDate().toISOString() : new Date().toISOString()
-                });
-                switchView('feed');
-                loadGlobalFeed(postId);
-            }
-        } catch (e) { console.warn("Router post fetch error:", e); }
-    } else if (puzzleId) {
-        try {
-            const puzzleSnap = await getDoc(doc(db, "puzzles", puzzleId));
-            if (puzzleSnap.exists()) {
-                const data = puzzleSnap.data();
-                updateSEO({ title: `Play Arcade Game: ${data.title}`, description: `Play and run ${data.title} inside the PensUp Arcade!` });
-                switchView('arcade');
-                runPuzzleSnippet(data.title, data.code);
-            }
-        } catch (e) { console.warn("Router puzzle fetch error:", e); }
-    } else if (profileUid) {
-        showProfile(profileUid);
-    }
+function triggerQuotaWarning() {
+    const banner = document.getElementById('credit-mode-banner');
+    if (banner) banner.classList.remove('hidden');
 }
 
 function applySettings() {
@@ -128,6 +64,8 @@ function applySettings() {
     if (document.getElementById('setting-chatbox-lift-dm')) document.getElementById('setting-chatbox-lift-dm').checked = settings.chatBoxLiftDm;
     if (document.getElementById('setting-force-toast')) document.getElementById('setting-force-toast').checked = settings.forceToast;
     if (document.getElementById('setting-dm-toast')) document.getElementById('setting-dm-toast').checked = settings.dmToast;
+    if (document.getElementById('setting-follow-toast')) document.getElementById('setting-follow-toast').checked = settings.followToast;
+    if (document.getElementById('setting-like-toast')) document.getElementById('setting-like-toast').checked = settings.likeToast;
     if (document.getElementById('setting-sound-enabled')) document.getElementById('setting-sound-enabled').checked = settings.soundEnabled;
     if (document.getElementById('setting-fullscreen')) document.getElementById('setting-fullscreen').checked = settings.fullScreen;
 
@@ -153,17 +91,24 @@ function showToastNotification(senderName, text, type = 'chat') {
     const container = createToastContainer();
     const toast = document.createElement('div');
     const isDm = type === 'dm';
-    const bgClass = isDm ? 'bg-blue-50 border-blue-400' : 'bg-yellow-50 border-amber-400';
-    const badgeBg = isDm ? 'bg-blue-200 text-blue-900' : 'bg-amber-200 text-amber-900';
-    const typeLabel = isDm ? '📫 Direct Message' : '📝 Main Chat';
+    const isFollow = type === 'follow';
+    const isLike = type === 'like';
     
+    let bgClass = 'bg-yellow-50 border-amber-400';
+    let badgeBg = 'bg-amber-200 text-amber-900';
+    let typeLabel = '📝 Main Chat';
+    
+    if (isDm) { bgClass = 'bg-blue-50 border-blue-400'; badgeBg = 'bg-blue-200 text-blue-900'; typeLabel = '📫 Direct Message'; }
+    else if (isFollow) { bgClass = 'bg-emerald-50 border-emerald-400'; badgeBg = 'bg-emerald-200 text-emerald-900'; typeLabel = '⭐ New Follower'; }
+    else if (isLike) { bgClass = 'bg-purple-50 border-purple-400'; badgeBg = 'bg-purple-200 text-purple-900'; typeLabel = '👍 Note Liked'; }
+
     toast.className = `p-3 ${bgClass} text-slate-800 sketched-border shadow-2xl animate-pop flex flex-col min-w-[280px] max-w-[360px] pointer-events-auto relative -rotate-1 border-2 transition-all duration-300`;
     let safeText = text.length > 50 ? escapeHTML(text.substring(0, 50)) + "..." : escapeHTML(text);
     
     toast.innerHTML = `
         <div class="flex items-center justify-between border-b border-slate-300/60 pb-1 mb-1 gap-2">
             <span class="text-xs font-bold ${badgeBg} px-2 py-0.5 rounded sketched-border-alt shrink-0">${typeLabel}</span>
-            <span class="text-sm font-bold text-indigo-600 truncate">From ${escapeHTML(senderName)}</span>
+            <span class="text-sm font-bold text-indigo-600 truncate">${escapeHTML(senderName)}</span>
         </div>
         <div class="text-lg leading-tight font-semibold text-slate-800 break-words">${safeText}</div>
     `;
@@ -173,6 +118,8 @@ function showToastNotification(senderName, text, type = 'chat') {
 
 function notifyUser(senderName, text, type = 'chat') {
     if (type === 'dm' && !settings.dmToast) return;
+    if (type === 'follow' && !settings.followToast) return;
+    if (type === 'like' && !settings.likeToast) return;
     showToastNotification(senderName, text, type);
 }
 
@@ -185,10 +132,12 @@ function listenForNotifications(uid) {
             if (change.type === "added") {
                 const data = change.doc.data();
                 if (data.type === 'dm') notifyUser(data.senderName, data.text, 'dm');
+                else if (data.type === 'follow') notifyUser(data.senderName, data.text, 'follow');
+                else if (data.type === 'like') notifyUser(data.senderName, data.text, 'like');
                 deleteDoc(change.doc.ref).catch(e => {});
             }
         });
-    }, (err) => console.warn("Notif listener note:", err));
+    }, (err) => {});
 }
 
 const escapeHTML = (str) => str ? String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;") : '';
@@ -246,7 +195,7 @@ document.getElementById('btn-guest').onclick = async () => {
         const cred = await signInAnonymously(auth);
         const guestName = `guest_${cred.user.uid.substring(0, 5)}`;
         await setDoc(doc(db, "users", cred.user.uid), { 
-            username: guestName, role: 'guest', suspended: false, emoji: '👀', bio: 'Browsing as guest', following: [], lastActive: serverTimestamp() 
+            username: guestName, role: 'guest', suspended: false, emoji: '👀', bio: 'Browsing as guest', following: [], lastActive: serverTimestamp(), isOnline: true 
         }, { merge: true });
     } catch (e) {
         document.getElementById('auth-loading').classList.add('hidden');
@@ -266,7 +215,7 @@ document.getElementById('btn-register').onclick = async () => {
         const cred = await createUserWithEmailAndPassword(auth, `${u}@notebook.local`, p);
         const role = SUPER_ADMINS.includes(u) ? 'super_admin' : 'user';
         await setDoc(doc(db, "usernames", u), { uid: cred.user.uid });
-        await setDoc(doc(db, "users", cred.user.uid), { username: u, role: role, suspended: false, emoji: '👤', bio: '', following: [], lastActive: serverTimestamp() });
+        await setDoc(doc(db, "users", cred.user.uid), { username: u, role: role, suspended: false, emoji: '👤', bio: '', following: [], lastActive: serverTimestamp(), isOnline: true });
         isRegistering = false; syncUserProfile(cred.user);
     } catch (e) { isRegistering = false; document.getElementById('auth-loading').classList.add('hidden'); showError(e.message); }
 };
@@ -282,6 +231,9 @@ document.getElementById('btn-login').onclick = async () => {
 
 document.getElementById('btn-logout-launch').onclick = async () => {
     document.getElementById('auth-loading').classList.add('hidden');
+    if (currentUser) {
+        await updateDoc(doc(db, "users", currentUser.uid), { isOnline: false }).catch(() => {});
+    }
     if (presenceInterval) { clearInterval(presenceInterval); presenceInterval = null; }
     if (unsubPresence) { unsubPresence(); unsubPresence = null; }
     if (unsubNotifs) { unsubNotifs(); unsubNotifs = null; }
@@ -290,12 +242,28 @@ document.getElementById('btn-logout-launch').onclick = async () => {
     try { await signOut(auth); } catch (e) {}
 };
 
-// --- OPTIMIZED PRESENCE HEARTBEAT (3-minute interval to prevent quota flood) ---
+// --- ONLINE / OFFLINE & PRESENCE LISTENER ---
+window.addEventListener('online', async () => {
+    if (currentUser) {
+        await updateDoc(doc(db, "users", currentUser.uid), { isOnline: true, lastActive: serverTimestamp() }).catch(() => {});
+    }
+    showToastNotification("System", "Back online! Syncing notebook...", "chat");
+});
+
+window.addEventListener('offline', async () => {
+    if (currentUser) {
+        await updateDoc(doc(db, "users", currentUser.uid), { isOnline: false }).catch(() => {});
+    }
+    showToastNotification("System", "You are offline. Changes will sync when reconnected.", "chat");
+});
+
 function startPresenceHeartbeat(uid) {
     if (presenceInterval) clearInterval(presenceInterval);
     const updatePresence = async () => {
-        if (!currentUser || !uid) return;
-        try { await updateDoc(doc(db, "users", uid), { lastActive: serverTimestamp() }); } catch (e) {}
+        if (!currentUser || !uid || !navigator.onLine) return;
+        try { 
+            await updateDoc(doc(db, "users", uid), { lastActive: serverTimestamp(), isOnline: true }); 
+        } catch (e) {}
     };
     updatePresence();
     presenceInterval = setInterval(updatePresence, 180000); 
@@ -306,7 +274,7 @@ function startPresenceHeartbeat(uid) {
         let activeCount = 0;
         snapshot.forEach(docSnap => {
             const data = docSnap.data();
-            if (data.lastActive) {
+            if (data.isOnline && data.lastActive) {
                 const lastTime = data.lastActive.toDate ? data.lastActive.toDate().getTime() : 0;
                 if ((now - lastTime) < 200000) activeCount++;
             }
@@ -368,7 +336,7 @@ onAuthStateChanged(auth, (user) => {
     if (isRegistering) return; 
     if (user) syncUserProfile(user);
     else {
-        currentUser = null; userProfile = null; document.getElementById('auth-loading').classList.add('hidden');
+        currentUser = null; userProfile = null; document.getElementById('auth-loading'].classList.add('hidden');
         UI.app.classList.replace('flex', 'hidden'); UI.launch.classList.add('hidden'); UI.auth.classList.remove('hidden');
         document.getElementById('auth-password').value = '';
         if (unsubNotifs) { unsubNotifs(); unsubNotifs = null; }
@@ -458,6 +426,8 @@ document.getElementById('btn-save-settings')?.addEventListener('click', () => {
     settings.chatBoxLiftDm = document.getElementById('setting-chatbox-lift-dm').checked;
     settings.forceToast = document.getElementById('setting-force-toast').checked;
     settings.dmToast = document.getElementById('setting-dm-toast').checked;
+    settings.followToast = document.getElementById('setting-follow-toast').checked;
+    settings.likeToast = document.getElementById('setting-like-toast').checked;
     settings.soundEnabled = document.getElementById('setting-sound-enabled').checked;
     settings.fullScreen = document.getElementById('setting-fullscreen').checked;
 
@@ -465,6 +435,8 @@ document.getElementById('btn-save-settings')?.addEventListener('click', () => {
     localStorage.setItem('pensup_lift_dm', settings.chatBoxLiftDm);
     localStorage.setItem('pensup_force_toast', settings.forceToast);
     localStorage.setItem('pensup_dm_toast', settings.dmToast);
+    localStorage.setItem('pensup_follow_toast', settings.followToast);
+    localStorage.setItem('pensup_like_toast', settings.likeToast);
     localStorage.setItem('pensup_sound', settings.soundEnabled);
     localStorage.setItem('pensup_fullscreen', settings.fullScreen);
 
@@ -483,28 +455,87 @@ document.getElementById('btn-enter-chat').onclick = () => {
 document.getElementById('btn-back-launch').onclick = () => { UI.app.classList.replace('flex', 'hidden'); UI.launch.classList.remove('hidden'); if(unsubMsg) unsubMsg(); };
 document.getElementById('user-badge').onclick = () => { if(currentUser) showProfile(currentUser.uid); };
 
-// --- STRICT LIMIT LOAD FOR CHAT TO CONSERVE QUOTA ---
+// --- PAGINATED CHAT LOAD (LOADS LATEST AT BOTTOM, MORE BUTTON ON SCROLL TO TOP) ---
 function loadMessages() {
     if (unsubMsg) unsubMsg(); isInitialLoadDone = false;
-    unsubMsg = onSnapshot(query(collection(db, `rooms/${ROOM_ID}/messages`), orderBy("createdAt", "asc"), limit(15)), 
+    UI.msgContainer.innerHTML = '<div id="chat-loading" class="text-center italic text-slate-500 my-auto">Flipping chat pages...</div>';
+    
+    unsubMsg = onSnapshot(query(collection(db, `rooms/${ROOM_ID}/messages`), orderBy("createdAt", "desc"), limit(15)), 
         (snapshot) => {
-            document.getElementById('chat-loading').classList.add('hidden'); UI.msgContainer.innerHTML = '';
-            const pinnedList = [];
-            snapshot.forEach(docSnap => {
-                const data = docSnap.data(); renderMessage(docSnap.id, data, UI.msgContainer, ROOM_ID);
-                if (data.isPinned && !data.isDeleted) pinnedList.push({ id: docSnap.id, ...data });
-            });
-            currentPinnedCount = pinnedList.length; renderPinnedSection(pinnedList);
-            UI.msgContainer.scrollTo(0, UI.msgContainer.scrollHeight);
+            const loadingEl = document.getElementById('chat-loading');
+            if (loadingEl) loadingEl.remove();
+            
+            const docs = snapshot.docs;
+            if (docs.length > 0) oldestMessageDoc = docs[docs.length - 1];
+            
+            const currentScrollTop = UI.msgContainer.scrollTop;
+            const isAtBottom = (UI.msgContainer.scrollHeight - UI.msgContainer.clientHeight - currentScrollTop) < 50;
+
+            // Render existing messages in container
+            const existingMsgs = Array.from(UI.msgContainer.querySelectorAll('[id^="msg-"]'));
+            if (existingMsgs.length === 0 || !isInitialLoadDone) {
+                UI.msgContainer.innerHTML = '';
+                // Add "Load More" button at top if there might be more messages
+                const loadMoreBtn = document.createElement('button');
+                loadMoreBtn.id = 'load-more-chat-btn';
+                loadMoreBtn.className = 'mx-auto my-2 px-3 py-1 bg-amber-200 text-amber-950 font-bold text-xs rounded sketched-border hover:bg-amber-300';
+                loadMoreBtn.textContent = '📜 Load Older Messages';
+                loadMoreBtn.onclick = loadOlderMessages;
+                UI.msgContainer.appendChild(loadMoreBtn);
+
+                const pinnedList = [];
+                docs.reverse().forEach(docSnap => {
+                    const data = docSnap.data(); 
+                    renderMessage(docSnap.id, data, UI.msgContainer, ROOM_ID);
+                    if (data.isPinned && !data.isDeleted) pinnedList.push({ id: docSnap.id, ...data });
+                });
+                currentPinnedCount = pinnedList.length; renderPinnedSection(pinnedList);
+                UI.msgContainer.scrollTo(0, UI.msgContainer.scrollHeight);
+            }
+
             if (isInitialLoadDone) {
                 snapshot.docChanges().forEach((change) => {
                     const data = change.doc.data();
-                    if (change.type === "added" && data.senderId !== currentUser.uid && !data.isDeleted) notifyUser(data.senderName, data.text, 'chat');
+                    if (change.type === "added" && data.senderId !== currentUser.uid && !data.isDeleted) {
+                        notifyUser(data.senderName, data.text, 'chat');
+                        // append new message
+                        renderMessage(change.doc.id, data, UI.msgContainer, ROOM_ID);
+                        UI.msgContainer.scrollTo(0, UI.msgContainer.scrollHeight);
+                    }
                 });
             }
             isInitialLoadDone = true;
-        }, (error) => { document.getElementById('chat-loading').classList.add('hidden'); console.warn("Chat quota note:", error); }
+        }, (error) => { 
+            triggerQuotaWarning();
+            console.warn("Chat quota note:", error); 
+        }
     );
+}
+
+async function loadOlderMessages() {
+    if (!oldestMessageDoc) return;
+    const loadBtn = document.getElementById('load-more-chat-btn');
+    if (loadBtn) loadBtn.textContent = 'Loading...';
+    try {
+        const olderQuery = query(collection(db, `rooms/${ROOM_ID}/messages`), orderBy("createdAt", "desc"), startAfter(oldestMessageDoc), limit(15));
+        const snap = await getDocs(olderQuery);
+        if (snap.empty) {
+            if (loadBtn) loadBtn.textContent = 'No older messages';
+            setTimeout(() => loadBtn?.remove(), 2000);
+            return;
+        }
+        oldestMessageDoc = snap.docs[snap.docs.length - 1];
+        const frag = document.createElement('div');
+        frag.className = 'flex flex-col gap-3 w-full';
+        snap.docs.reverse().forEach(docSnap => {
+            renderMessage(docSnap.id, docSnap.data(), frag, ROOM_ID);
+        });
+        loadBtn?.after(frag);
+        if (loadBtn) loadBtn.textContent = '📜 Load Older Messages';
+    } catch (e) {
+        triggerQuotaWarning();
+        if (loadBtn) loadBtn.textContent = 'Failed to load';
+    }
 }
 
 function renderPinnedSection(pinnedList) {
@@ -533,7 +564,7 @@ window.jumpToMessage = (id) => {
 
 window.togglePin = async (id, shouldPin) => {
     if (!userProfile || userProfile.role !== 'super_admin') return;
-    try { await updateDoc(doc(db, `rooms/${ROOM_ID}/messages`, id), { isPinned: shouldPin }); } catch (e) {}
+    try { await updateDoc(doc(db, `rooms/${ROOM_ID}/messages`, id), { isPinned: shouldPin }); } catch (e) { triggerQuotaWarning(); }
 };
 
 async function sendMessage(text) {
@@ -545,7 +576,10 @@ async function sendMessage(text) {
             text: text, createdAt: serverTimestamp(), isDeleted: false, isPinned: false
         });
         UI.input.value = ''; updateInput();
-    } catch (e) { alert("Message send failed due to quota limit."); }
+    } catch (e) { 
+        triggerQuotaWarning();
+        alert("Message send failed due to quota limit."); 
+    }
 }
 
 UI.sendBtn.onclick = () => { if (UI.input.value.trim()) sendMessage(UI.input.value.trim()); };
@@ -635,10 +669,17 @@ window.toggleFollow = async (targetUid) => {
     const isFollowing = (userProfile.following || []).includes(targetUid);
     const userRef = doc(db, "users", currentUser.uid);
     try {
-        if (isFollowing) await updateDoc(userRef, { following: arrayRemove(targetUid) });
-        else await updateDoc(userRef, { following: arrayUnion(targetUid) });
+        if (isFollowing) {
+            await updateDoc(userRef, { following: arrayRemove(targetUid) });
+        } else {
+            await updateDoc(userRef, { following: arrayUnion(targetUid) });
+            // Send notification for new follower
+            await addDoc(collection(db, `users/${targetUid}/notifications`), {
+                type: 'follow', senderName: userProfile.username, text: `started following you!`, createdAt: serverTimestamp()
+            });
+        }
         if (activeProfileUid) showProfile(activeProfileUid);
-    } catch(e) {}
+    } catch(e) { triggerQuotaWarning(); }
 };
 
 const doodleModal = document.getElementById('doodle-modal');
@@ -742,7 +783,7 @@ window.showProfile = async (uid) => {
             badgesContainer.innerHTML = earnedBadges.map(b => `<span class="text-xs font-bold px-2 py-0.5 rounded border ${b.bg} sketched-border-alt">${b.title}</span>`).join('');
         }
         loadProfilePosts(uid);
-    } catch (e) {}
+    } catch (e) { triggerQuotaWarning(); }
 };
 
 document.getElementById('btn-delete-account')?.addEventListener('click', async () => {
@@ -789,7 +830,7 @@ function loadProfilePosts(uid) {
         if(snapshot.empty) { listEl.innerHTML = '<div class="text-center text-slate-500 italic mt-4">No posts yet.</div>'; return; }
         const canDeletePosts = currentUser && (uid === currentUser.uid || ['super_admin', 'admin'].includes(userProfile?.role));
         snapshot.forEach(docSnap => renderPostCard(docSnap.id, docSnap.data(), uid, listEl, canDeletePosts));
-    }, (err) => {});
+    }, (err) => { triggerQuotaWarning(); });
 }
 
 function renderPostCard(postId, post, ownerUid, containerEl, canDelete) {
@@ -894,7 +935,10 @@ document.getElementById('btn-publish-post')?.addEventListener('click', async () 
         await setDoc(doc(db, `global_posts`, docRef.id), postData);
         input.value = ''; attachedDoodleBase64 = null;
         document.getElementById('post-doodle-preview-container').classList.add('hidden');
-    } catch(e) { alert("Post limit or quota error reached."); }
+    } catch(e) { 
+        triggerQuotaWarning();
+        alert("Post limit or quota error reached."); 
+    }
 });
 
 window.togglePostVote = async (postOwnerUid, postId, type) => {
@@ -908,14 +952,22 @@ window.togglePostVote = async (postOwnerUid, postId, type) => {
         let updates = {};
         if(isLike) {
             if(data.likes?.includes(uid)) updates.likes = arrayRemove(uid);
-            else { updates.likes = arrayUnion(uid); updates.dislikes = arrayRemove(uid); }
+            else { 
+                updates.likes = arrayUnion(uid); 
+                updates.dislikes = arrayRemove(uid);
+                if (postOwnerUid !== currentUser.uid) {
+                    await addDoc(collection(db, `users/${postOwnerUid}/notifications`), {
+                        type: 'like', senderName: userProfile.username, text: `liked your note!`, createdAt: serverTimestamp()
+                    }).catch(() => {});
+                }
+            }
         } else {
             if(data.dislikes?.includes(uid)) updates.dislikes = arrayRemove(uid);
             else { updates.dislikes = arrayUnion(uid); updates.likes = arrayRemove(uid); }
         }
         await updateDoc(postRef, updates);
         await updateDoc(globalRef, updates).catch(() => {});
-    } catch(e) {}
+    } catch(e) { triggerQuotaWarning(); }
 };
 
 window.filterByTag = (tag) => {
@@ -933,26 +985,74 @@ document.getElementById('btn-clear-tag-filter')?.addEventListener('click', () =>
     applyFeedFilterAndSort();
 });
 
-// --- STRICT LIMIT LOAD FOR FEED TO CONSERVE QUOTA ---
+// --- PAGINATED GLOBAL FEED ---
 function loadGlobalFeed(scrollToPostId = null) {
     if (unsubFeed) unsubFeed();
     const container = document.getElementById('global-feed-list');
     if(!container) return;
     container.innerHTML = '<div class="text-center italic text-slate-500 mt-6">Ranking global notebook feed...</div>';
 
-    unsubFeed = onSnapshot(query(collection(db, "global_posts"), limit(15)), (snapshot) => {
+    unsubFeed = onSnapshot(query(collection(db, "global_posts"), orderBy("createdAt", "desc"), limit(10)), (snapshot) => {
         container.innerHTML = '';
         if (snapshot.empty) { container.innerHTML = '<div class="text-center italic text-slate-500 mt-6">No public posts yet.</div>'; return; }
+        
+        const docs = snapshot.docs;
+        if (docs.length > 0) lastVisibleFeedDoc = docs[docs.length - 1];
+
         globalPostsCache = [];
-        snapshot.forEach(docSnap => globalPostsCache.push({ id: docSnap.id, ...docSnap.data() }));
+        docs.forEach(docSnap => globalPostsCache.push({ id: docSnap.id, ...docSnap.data() }));
         applyFeedFilterAndSort();
+
+        // Add "Load More Posts" button at bottom of feed
+        const loadMoreFeedBtn = document.createElement('button');
+        loadMoreFeedBtn.id = 'load-more-feed-btn';
+        loadMoreFeedBtn.className = 'w-full py-2 my-2 bg-indigo-100 text-indigo-900 font-bold text-sm rounded sketched-border hover:bg-indigo-200';
+        loadMoreFeedBtn.textContent = '📜 Load More Posts';
+        loadMoreFeedBtn.onclick = loadMoreFeedPosts;
+        container.appendChild(loadMoreFeedBtn);
+
         if (scrollToPostId) {
             setTimeout(() => {
                 const targetEl = document.getElementById(`post-${scrollToPostId}`);
                 if (targetEl) targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }, 300);
         }
-    }, (err) => { container.innerHTML = '<div class="text-center italic text-rose-500 mt-6">Database quota exceeded temporarily. Try again later.</div>'; });
+    }, (err) => { 
+        triggerQuotaWarning();
+        container.innerHTML = '<div class="text-center italic text-rose-500 mt-6">Database quota exceeded temporarily. Try again later.</div>'; 
+    });
+}
+
+async function loadMoreFeedPosts() {
+    if (!lastVisibleFeedDoc) return;
+    const loadBtn = document.getElementById('load-more-feed-btn');
+    if (loadBtn) loadBtn.textContent = 'Loading...';
+    try {
+        const nextQuery = query(collection(db, "global_posts"), orderBy("createdAt", "desc"), startAfter(lastVisibleFeedDoc), limit(10));
+        const snap = await getDocs(nextQuery);
+        loadBtn?.remove();
+        if (snap.empty) return;
+
+        lastVisibleFeedDoc = snap.docs[snap.docs.length - 1];
+        const container = document.getElementById('global-feed-list');
+        snap.docs.forEach(docSnap => {
+            const post = { id: docSnap.id, ...docSnap.data() };
+            globalPostsCache.push(post);
+            const canDelete = currentUser && (post.authorId === currentUser.uid || ['super_admin', 'admin'].includes(userProfile?.role));
+            renderPostCard(post.id, post, post.authorId, container, canDelete);
+        });
+
+        // Re-add button at bottom
+        const newLoadMoreBtn = document.createElement('button');
+        newLoadMoreBtn.id = 'load-more-feed-btn';
+        newLoadMoreBtn.className = 'w-full py-2 my-2 bg-indigo-100 text-indigo-900 font-bold text-sm rounded sketched-border hover:bg-indigo-200';
+        newLoadMoreBtn.textContent = '📜 Load More Posts';
+        newLoadMoreBtn.onclick = loadMoreFeedPosts;
+        container.appendChild(newLoadMoreBtn);
+    } catch (e) {
+        triggerQuotaWarning();
+        if (loadBtn) loadBtn.textContent = 'Failed to load';
+    }
 }
 
 function applyFeedFilterAndSort() {
@@ -995,12 +1095,14 @@ document.getElementById('feed-sort-select')?.addEventListener('change', applyFee
 document.getElementById('feed-date-select')?.addEventListener('change', applyFeedFilterAndSort);
 
 function renderFeedList(posts, containerEl) {
+    const loadBtn = document.getElementById('load-more-feed-btn');
     containerEl.innerHTML = '';
     if (posts.length === 0) { containerEl.innerHTML = '<div class="text-center italic text-slate-500 mt-6">No matching posts found.</div>'; return; }
     posts.forEach(post => {
         const canDelete = currentUser && (post.authorId === currentUser.uid || ['super_admin', 'admin'].includes(userProfile?.role));
         renderPostCard(post.id, post, post.authorId, containerEl, canDelete);
     });
+    if (loadBtn) containerEl.appendChild(loadBtn);
 }
 
 window.setStickyColor = (color) => {
@@ -1023,7 +1125,7 @@ document.getElementById('btn-publish-sticky')?.addEventListener('click', async (
             authorEmoji: userProfile.emoji || '👤', authorId: currentUser.uid, createdAt: serverTimestamp()
         });
         input.value = '';
-    } catch(e) {}
+    } catch(e) { triggerQuotaWarning(); }
 });
 
 function loadStickyNotes() {
@@ -1057,12 +1159,12 @@ function loadStickyNotes() {
             `;
             grid.appendChild(div);
         });
-    }, (err) => {});
+    }, (err) => { triggerQuotaWarning(); });
 }
 
 window.deleteStickyNote = async (id) => {
     if (confirm("Take down this sticky note?")) {
-        try { await deleteDoc(doc(db, "sticky_board", id)); } catch(e) {}
+        try { await deleteDoc(doc(db, "sticky_board", id)); } catch(e) { triggerQuotaWarning(); }
     }
 };
 
@@ -1081,7 +1183,7 @@ document.getElementById('btn-save-puzzle')?.addEventListener('click', async () =
         document.getElementById('puzzle-code-input').value = '';
         puzzleModal.classList.add('hidden');
         loadArcadePuzzles();
-    } catch(e) {}
+    } catch(e) { triggerQuotaWarning(); }
 });
 
 function loadArcadePuzzles() {
@@ -1107,7 +1209,7 @@ function loadArcadePuzzles() {
             arcadeList.appendChild(div);
             if (first) { runPuzzleSnippet(puzzle.title, puzzle.code); first = false; }
         });
-    }, (err) => {});
+    }, (err) => { triggerQuotaWarning(); });
 }
 
 function runPuzzleSnippet(title, htmlCode) {
@@ -1161,7 +1263,10 @@ document.getElementById('btn-open-dms')?.addEventListener('click', async () => {
         const countSpan = document.getElementById('dm-following-tab-count');
         if(countSpan) countSpan.textContent = (userProfile?.following || []).length;
         renderUserDirectory(allUsersCache);
-    } catch(e) { list.innerHTML = '<div class="text-center p-4 text-rose-500">Error loading directory.</div>'; }
+    } catch(e) { 
+        triggerQuotaWarning();
+        list.innerHTML = '<div class="text-center p-4 text-rose-500">Error loading directory.</div>'; 
+    }
 });
 
 document.getElementById('dm-directory-close')?.addEventListener('click', () => dmDirModal.classList.add('hidden'));
@@ -1181,7 +1286,6 @@ function renderUserDirectory(users) {
     if (filtered.length === 0) { list.innerHTML = `<div class="text-center p-6 text-slate-400 italic">No members found.</div>`; return; }
 
     filtered.forEach(u => {
-        const isFollowing = userProfile && (userProfile.following || []).includes(u.id);
         const div = document.createElement('div');
         div.className = "flex items-center justify-between p-3 bg-white/80 sketched-border cursor-pointer hover:bg-amber-100/80 gap-2";
         div.onclick = () => openDmChat(u.id, u.username, u.emoji, u.bio);
@@ -1229,12 +1333,13 @@ function loadDmMessages() {
     if(!container) return;
     container.innerHTML = '<div class="text-center mt-6 font-bold text-slate-500 italic">Opening letter...</div>';
     
-    unsubDmMsg = onSnapshot(query(collection(db, `rooms/${activeDmId}/messages`), orderBy("createdAt", "asc"), limit(15)), (snapshot) => {
+    unsubDmMsg = onSnapshot(query(collection(db, `rooms/${activeDmId}/messages`), orderBy("createdAt", "desc"), limit(15)), (snapshot) => {
         container.innerHTML = '';
         if(snapshot.empty) { container.innerHTML = `<div class="text-center p-6 text-slate-500 italic">No private notes yet.</div>`; return; }
-        snapshot.forEach(docSnap => renderMessage(docSnap.id, docSnap.data(), container, activeDmId));
+        const docs = snapshot.docs.reverse();
+        docs.forEach(docSnap => renderMessage(docSnap.id, docSnap.data(), container, activeDmId));
         container.scrollTo(0, container.scrollHeight);
-    }, (err) => {});
+    }, (err) => { triggerQuotaWarning(); });
 }
 
 dmSendBtn.onclick = async () => {
@@ -1245,8 +1350,17 @@ dmSendBtn.onclick = async () => {
             senderId: currentUser.uid, senderName: userProfile.username, senderEmoji: userProfile.emoji || '👤',
             text: text, createdAt: serverTimestamp(), isDeleted: false, isPinned: false
         });
+        // Send DM notification to recipient
+        if (activeDmTargetId) {
+            await addDoc(collection(db, `users/${activeDmTargetId}/notifications`), {
+                type: 'dm', senderName: userProfile.username, text: text, createdAt: serverTimestamp()
+            }).catch(() => {});
+        }
         dmInput.value = '';
-    } catch (e) { alert("DM limit reached."); }
+    } catch (e) { 
+        triggerQuotaWarning();
+        alert("DM limit reached."); 
+    }
 };
 
 const adminModal = document.getElementById('admin-modal');
