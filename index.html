@@ -62,9 +62,9 @@
     </div>
 
     <!-- Credit Mode Alert Banner -->
-    <div id="credit-mode-banner" class="hidden bg-rose-600 text-white text-xs font-bold px-3 py-1 text-center border-b border-rose-800 z-50 flex justify-between items-center">
-        <span>⚠️ Credit Mode Active: High Traffic. Operations throttled to conserve database limits.</span>
-        <span id="credit-counter" class="bg-rose-800 px-2 py-0.5 rounded">Quota: 100/100</span>
+    <div id="credit-mode-banner" class="hidden bg-amber-500 text-slate-950 text-xs font-bold px-3 py-1.5 text-center border-b-2 border-slate-800 z-50 flex justify-between items-center shadow-md">
+        <span>⚡ High traffic detected! We're temporarily pacing requests to keep our free notebook running smoothly.</span>
+        <button onclick="document.getElementById('credit-mode-banner').classList.add('hidden')" class="bg-amber-700 text-white px-2 py-0.5 rounded">Dismiss ✖</button>
     </div>
 
     <!-- AUTH SCREEN -->
@@ -358,6 +358,19 @@
                     <span>Lift DM Input Box</span>
                     <input type="checkbox" id="setting-chatbox-lift-dm" class="w-4 h-4">
                 </label>
+                <label class="flex justify-between items-center cursor-pointer">
+                    <span>Notify for Direct Messages</span>
+                    <input type="checkbox" id="setting-dm-toast" class="w-4 h-4">
+                </label>
+                <label class="flex justify-between items-center cursor-pointer">
+                    <span>Notify for New Followers</span>
+                    <input type="checkbox" id="setting-follow-toast" class="w-4 h-4">
+                </label>
+                <label class="flex justify-between items-center cursor-pointer">
+                    <span>Notify for Post Likes</span>
+                    <input type="checkbox" id="setting-like-toast" class="w-4 h-4">
+                </label>
+
                 <label class="flex justify-between items-center cursor-pointer">
                     <span>Force In-App Toasts</span>
                     <input type="checkbox" id="setting-force-toast" class="w-4 h-4">
