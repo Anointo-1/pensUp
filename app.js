@@ -16,7 +16,7 @@ const db = getFirestore(app);
 // --- 2. APK DOWNLOAD HANDLER ---
 window.downloadAppAPK = function() {
     showToastNotification("PensUp", "Starting APK download...", "chat");
-    const apkPath = "./downloads/pensup-v1.0.apk";
+    const apkPath = "pensup-v1.0.apk";
          
     const downloadAnchor = document.createElement('a');
     downloadAnchor.href = apkPath;
