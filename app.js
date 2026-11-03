@@ -7,7 +7,7 @@ const firebaseConfig = {
     apiKey: "AIzaSyDgou5bwByER3Tw_lL-BX1n02dgAESYft0",
     authDomain: "notebookchat-6c5ef.firebaseapp.com",
     projectId: "notebookchat-6c5ef"
-}; // Fixed: Missing closing brace and semicolon added
+};
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -16,9 +16,8 @@ const db = getFirestore(app);
 // --- 2. APK DOWNLOAD HANDLER ---
 window.downloadAppAPK = function() {
     showToastNotification("PensUp", "Starting APK download...", "chat");
-
-    const apkPath = "./downloads/pensup-v1.0.apk"; // Path to your APK file in your project directory
-    
+    const apkPath = "./downloads/pensup-v1.0.apk";
+         
     const downloadAnchor = document.createElement('a');
     downloadAnchor.href = apkPath;
     downloadAnchor.setAttribute("download", "PensUp.apk");
@@ -31,7 +30,8 @@ setPersistence(auth, browserLocalPersistence).catch((err) => console.warn("Auth 
 
 let currentUser = null, userProfile = null;
 let userDocUnsub = null, unsubMsg = null, unsubDmMsg = null, unsubProfilePosts = null, unsubNotifs = null, unsubFeed = null, unsubPuzzles = null, unsubSticky = null, unsubPresence = null;
-let isRegistering = false, isInitialLoadDone = false; 
+let isRegistering = false, isInitialLoadDone = false;
+
 let currentPinnedCount = 0;
 let linksEnabledGlobally = true;
 let attachedDoodleBase64 = null;
@@ -41,19 +41,25 @@ let activeTagFilter = null;
 let presenceInterval = null;
 let oldestMessageDoc = null;
 let lastVisibleFeedDoc = null;
-
 const ROOM_ID = "main-room";
 const SUPER_ADMINS = ['anoimazo1', 'anointo', 'amazo'];
-const ALL_EMOJIS = ['👤','👻','👾','🤖','👽','🐼','🦊','🦄','🐸','🐱','🐶','🦖','✏️','🎨','🔥','😎','🤠','🥳','🤡','👑','🎒','🎓','📚','💡','🚀','⭐','🌟','🌈','⚡','🎯','⚽','🎮','🍕','🍔','🌮','🍩','🍦','☕','🏀','🎸','🎧','🧩','🎲','🧸','🐉','🐙','🦋','🦁','🐯','🐻','🦉','🦅','🐺','🔮','🧿','💎','💰','🏆','🥇','🎖️'];
+const ALL_EMOJIS = ['😀', '😎', '📚', '✏️', '💻', '🚀', '⭐', '🔥', '🎨', '🧠', '⚡', '☕', '🐱', '🦊', '🐼', '🏆', '🎵', '💡', '📌', '🔍'];
 
 const UI = {
-    auth: document.getElementById('auth-screen'), launch: document.getElementById('launch-screen'), app: document.getElementById('app-screen'),
-    msgContainer: document.getElementById('chat-messages'), input: document.getElementById('message-input'), sendBtn: document.getElementById('btn-send'),
-    err: document.getElementById('auth-error'), adminBtn: document.getElementById('btn-admin'), themeSel: document.getElementById('theme-selector'),
+    auth: document.getElementById('auth-screen'),
+    launch: document.getElementById('launch-screen'),
+    app: document.getElementById('app-screen'),
+    msgContainer: document.getElementById('chat-messages'),
+    input: document.getElementById('message-input'),
+    sendBtn: document.getElementById('btn-send'),
+    err: document.getElementById('auth-error'),
+    adminBtn: document.getElementById('btn-admin'),
+    themeSel: document.getElementById('theme-selector'),
     footer: document.getElementById('chat-footer')
 };
 
-const writeSound = new Audio('writing.mp3'); writeSound.playbackRate = 1.3;
+const writeSound = new Audio('writing.mp3');
+writeSound.playbackRate = 1.3;
 
 let settings = {
     chatBoxLift: localStorage.getItem('pensup_lift') === 'true',
@@ -75,7 +81,6 @@ function applySettings() {
     settings.chatBoxLift ? UI.footer.classList.add('mb-12') : UI.footer.classList.remove('mb-12');
     const dmFooter = document.getElementById('dm-chat-footer');
     if (dmFooter) settings.chatBoxLiftDm ? dmFooter.classList.add('mb-12') : dmFooter.classList.remove('mb-12');
-
     if (document.getElementById('setting-chatbox-lift')) document.getElementById('setting-chatbox-lift').checked = settings.chatBoxLift;
     if (document.getElementById('setting-chatbox-lift-dm')) document.getElementById('setting-chatbox-lift-dm').checked = settings.chatBoxLiftDm;
     if (document.getElementById('setting-force-toast')) document.getElementById('setting-force-toast').checked = settings.forceToast;
@@ -84,7 +89,6 @@ function applySettings() {
     if (document.getElementById('setting-like-toast')) document.getElementById('setting-like-toast').checked = settings.likeToast;
     if (document.getElementById('setting-sound-enabled')) document.getElementById('setting-sound-enabled').checked = settings.soundEnabled;
     if (document.getElementById('setting-fullscreen')) document.getElementById('setting-fullscreen').checked = settings.fullScreen;
-
     if (settings.fullScreen) {
         if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(e => {});
     } else {
@@ -109,18 +113,18 @@ function showToastNotification(senderName, text, type = 'chat') {
     const isDm = type === 'dm';
     const isFollow = type === 'follow';
     const isLike = type === 'like';
-    
+         
     let bgClass = 'bg-yellow-50 border-amber-400';
     let badgeBg = 'bg-amber-200 text-amber-900';
-    let typeLabel = '📝 Main Chat';
-    
-    if (isDm) { bgClass = 'bg-blue-50 border-blue-400'; badgeBg = 'bg-blue-200 text-blue-900'; typeLabel = '📫 Direct Message'; }
+    let typeLabel = '💬 Main Chat';
+         
+    if (isDm) { bgClass = 'bg-blue-50 border-blue-400'; badgeBg = 'bg-blue-200 text-blue-900'; typeLabel = '✉️ Direct Message'; }
     else if (isFollow) { bgClass = 'bg-emerald-50 border-emerald-400'; badgeBg = 'bg-emerald-200 text-emerald-900'; typeLabel = '⭐ New Follower'; }
-    else if (isLike) { bgClass = 'bg-purple-50 border-purple-400'; badgeBg = 'bg-purple-200 text-purple-900'; typeLabel = '👍 Note Liked'; }
-
+    else if (isLike) { bgClass = 'bg-purple-50 border-purple-400'; badgeBg = 'bg-purple-200 text-purple-900'; typeLabel = '❤️ Note Liked'; }
+    
     toast.className = `p-3 ${bgClass} text-slate-800 sketched-border shadow-2xl animate-pop flex flex-col min-w-[280px] max-w-[360px] pointer-events-auto relative -rotate-1 border-2 transition-all duration-300`;
     let safeText = text.length > 50 ? escapeHTML(text.substring(0, 50)) + "..." : escapeHTML(text);
-    
+         
     toast.innerHTML = `
         <div class="flex items-center justify-between border-b border-slate-300/60 pb-1 mb-1 gap-2">
             <span class="text-xs font-bold ${badgeBg} px-2 py-0.5 rounded sketched-border-alt shrink-0">${typeLabel}</span>
@@ -164,7 +168,6 @@ window.openInAppWebLink = (url) => {
     const title = document.getElementById('link-preview-title');
     const urlText = document.getElementById('link-preview-url-text');
     const extBtn = document.getElementById('link-preview-external-btn');
-
     if (!modal || !iframe) { window.open(url, '_blank'); return; }
     title.textContent = `Viewing Web Link`;
     urlText.textContent = url;
@@ -200,8 +203,16 @@ function extractTagsFromText(text) {
     return [...new Set(matches.map(t => t.substring(1)))];
 }
 
-const showError = (msg) => { UI.err.textContent = msg; UI.err.classList.remove('hidden'); setTimeout(() => UI.err.classList.add('hidden'), 4000); };
-const setTimeGreeting = () => { const hr = new Date().getHours(); document.getElementById('greeting-text').textContent = hr < 12 ? 'Good Morning!' : hr < 18 ? 'Good Afternoon!' : 'Good Evening!'; };
+const showError = (msg) => {
+    UI.err.textContent = msg;
+    UI.err.classList.remove('hidden');
+    setTimeout(() => UI.err.classList.add('hidden'), 4000);
+};
+
+const setTimeGreeting = () => {
+    const hr = new Date().getHours();
+    document.getElementById('greeting-text').textContent = hr < 12 ? 'Good Morning!' : hr < 18 ? 'Good Afternoon!' : 'Good Evening!';
+};
 
 UI.themeSel.onchange = (e) => document.body.className = `h-screen w-full flex flex-col relative overflow-hidden text-lg select-none ${e.target.value}`;
 
@@ -223,16 +234,18 @@ document.getElementById('btn-register').onclick = async () => {
     const u = document.getElementById('auth-username').value.trim().toLowerCase().replace(/\s+/g, '');
     const p = document.getElementById('auth-password').value;
     if (u.length < 3 || p.length < 6) return showError("Username min 3 chars, password min 6 chars.");
-    document.getElementById('auth-loading').classList.add('hidden');
-    isRegistering = true; 
+    document.getElementById('auth-loading').classList.remove('hidden');
+    isRegistering = true;
+     
     try {
         const usernameDoc = await getDoc(doc(db, "usernames", u));
         if (usernameDoc.exists()) { isRegistering = false; document.getElementById('auth-loading').classList.add('hidden'); return showError("Username is already taken."); }
         const cred = await createUserWithEmailAndPassword(auth, `${u}@notebook.local`, p);
         const role = SUPER_ADMINS.includes(u) ? 'super_admin' : 'user';
         await setDoc(doc(db, "usernames", u), { uid: cred.user.uid });
-        await setDoc(doc(db, "users", cred.user.uid), { username: u, role: role, suspended: false, emoji: '👤', bio: '', following: [], lastActive: serverTimestamp(), isOnline: true });
-        isRegistering = false; syncUserProfile(cred.user);
+        await setDoc(doc(db, "users", cred.user.uid), { username: u, role: role, suspended: false, emoji: '😀', bio: '', following: [], lastActive: serverTimestamp(), isOnline: true });
+        isRegistering = false;
+        syncUserProfile(cred.user);
     } catch (e) { isRegistering = false; document.getElementById('auth-loading').classList.add('hidden'); showError(e.message); }
 };
 
@@ -282,8 +295,8 @@ function startPresenceHeartbeat(uid) {
         } catch (e) {}
     };
     updatePresence();
-    presenceInterval = setInterval(updatePresence, 180000); 
-
+    presenceInterval = setInterval(updatePresence, 180000);
+     
     if (unsubPresence) unsubPresence();
     unsubPresence = onSnapshot(collection(db, "users"), (snapshot) => {
         const now = Date.now();
@@ -305,19 +318,11 @@ async function handleUrlRouting() {
     const postId = params.get('post');
     const puzzleId = params.get('puzzle');
     const profileUid = params.get('profile');
-
     if (postId) {
         try {
             const postSnap = await getDoc(doc(db, "global_posts", postId));
             if (postSnap.exists()) {
                 const data = postSnap.data();
-                updateSEO({
-                    title: `Discussion by @${data.authorName}: "${data.text.substring(0, 30)}..."`,
-                    description: data.text || "Check out this handwritten note on PensUp Pro!",
-                    image: data.doodleImage || "https://anointo-1.github.io/pensUp/PensUp.jpg",
-                    authorName: data.authorName,
-                    datePublished: data.createdAt ? data.createdAt.toDate().toISOString() : new Date().toISOString()
-                });
                 switchView('feed');
                 loadGlobalFeed(postId);
             }
@@ -327,7 +332,6 @@ async function handleUrlRouting() {
             const puzzleSnap = await getDoc(doc(db, "puzzles", puzzleId));
             if (puzzleSnap.exists()) {
                 const data = puzzleSnap.data();
-                updateSEO({ title: `Play Arcade Game: ${data.title}`, description: `Play and run ${data.title} inside the PensUp Arcade!` });
                 switchView('arcade');
                 runPuzzleSnippet(data.title, data.code);
             }
@@ -337,12 +341,12 @@ async function handleUrlRouting() {
     }
 }
 
-
 function syncUserProfile(user) {
     if (userDocUnsub) { userDocUnsub(); userDocUnsub = null; }
     userDocUnsub = onSnapshot(doc(db, "users", user.uid), 
         (docSnap) => {
-            if (isRegistering) return; 
+            if (isRegistering) return;
+             
             if (!docSnap.exists() || docSnap.data().suspended) { 
                 document.getElementById('auth-loading').classList.add('hidden');
                 signOut(auth); 
@@ -350,25 +354,25 @@ function syncUserProfile(user) {
                 return; 
             }
             const wasNull = !currentUser;
-            userProfile = docSnap.data(); 
+            userProfile = docSnap.data();
+             
             if (!userProfile.following) userProfile.following = [];
             currentUser = user;
-            
+                         
             document.getElementById('auth-loading').classList.add('hidden');
-            UI.auth.classList.add('hidden'); 
+            UI.auth.classList.add('hidden');
+             
             if (wasNull && UI.app.classList.contains('hidden')) UI.launch.classList.remove('hidden');
-
             setTimeGreeting();
             document.getElementById('launch-username').textContent = userProfile.username;
-            document.getElementById('btn-open-emoji-picker').textContent = userProfile.emoji || '👤';
+            document.getElementById('btn-open-emoji-picker').textContent = userProfile.emoji || '😀';
             document.getElementById('launch-bio').value = userProfile.bio || '';
-            document.getElementById('user-badge').textContent = `${userProfile.emoji || '👤'} My Profile`;
-            
+            document.getElementById('user-badge').textContent = `${userProfile.emoji || '😀'} My Profile`;
+                         
             if (userProfile.role === 'guest') {
                 document.getElementById('launch-bio').disabled = true;
                 document.getElementById('btn-open-emoji-picker').disabled = true;
             }
-
             if (['super_admin', 'admin'].includes(userProfile.role)) {
                 UI.adminBtn.classList.remove('hidden');
                 document.getElementById('btn-open-puzzle-creator').classList.remove('hidden');
@@ -377,7 +381,7 @@ function syncUserProfile(user) {
                 document.getElementById('btn-open-puzzle-creator').classList.add('hidden');
             }
             if (userProfile.role === 'super_admin') document.getElementById('btn-edit-board').classList.remove('hidden');
-            
+                         
             listenForNotifications(user.uid);
             startPresenceHeartbeat(user.uid);
             handleUrlRouting();
@@ -387,7 +391,8 @@ function syncUserProfile(user) {
 }
 
 onAuthStateChanged(auth, (user) => {
-    if (isRegistering) return; 
+    if (isRegistering) return;
+     
     if (user) syncUserProfile(user);
     else {
         currentUser = null; userProfile = null; document.getElementById('auth-loading').classList.add('hidden');
@@ -417,23 +422,19 @@ tabSticky.onclick = () => { switchView('sticky'); loadStickyNotes(); };
 function switchView(v) {
     viewChat.classList.add('hidden'); viewFeed.classList.add('hidden'); viewArcade.classList.add('hidden'); viewSticky.classList.add('hidden');
     tabChat.className = tabFeed.className = tabArcade.className = tabSticky.className = "px-3 py-1 font-bold text-sm bg-white text-slate-700 rounded sketched-border hover:bg-yellow-200 transition-colors";
-    
+         
     if (v === 'chat') {
         viewChat.classList.remove('hidden');
         tabChat.className = "px-3 py-1 font-bold text-sm bg-indigo-500 text-white rounded sketched-border transition-colors";
-        updateSEO({ title: "Main Chat Room", description: "Real-time handwritten chat and study group notes on PensUp Pro." });
     } else if (v === 'feed') {
         viewFeed.classList.remove('hidden');
         tabFeed.className = "px-3 py-1 font-bold text-sm bg-indigo-500 text-white rounded sketched-border transition-colors";
-        updateSEO({ title: "Global Feed", description: "Browse trending study discussions, math problems, and public posts." });
     } else if (v === 'arcade') {
         viewArcade.classList.remove('hidden');
         tabArcade.className = "px-3 py-1 font-bold text-sm bg-indigo-500 text-white rounded sketched-border transition-colors";
-        updateSEO({ title: "Arcade Games & Code Snippets", description: "Play custom games and run code snippets published by the community." });
     } else if (v === 'sticky') {
         viewSticky.classList.remove('hidden');
         tabSticky.className = "px-3 py-1 font-bold text-sm bg-indigo-500 text-white rounded sketched-border transition-colors";
-        updateSEO({ title: "Sticky Board", description: "Shared sticky note wall for quick community messages and study thoughts." });
     }
 }
 
@@ -441,40 +442,48 @@ const emojiModal = document.getElementById('emoji-modal');
 const emojiGrid = document.getElementById('emoji-grid');
 ALL_EMOJIS.forEach(e => {
     const btn = document.createElement('button'); btn.className = "hover:scale-125 transition-transform p-1 cursor-pointer";
-    btn.textContent = e; btn.onclick = () => selectEmoji(e); emojiGrid.appendChild(btn);
+    btn.textContent = e; btn.onclick = () => selectEmoji(e);
+    emojiGrid.appendChild(btn);
 });
+
 document.getElementById('btn-open-emoji-picker')?.addEventListener('click', () => {
     if (userProfile?.role === 'guest') return alert("Guests cannot change profile emoji.");
     emojiModal.classList.remove('hidden');
 });
+
 document.getElementById('emoji-close')?.addEventListener('click', () => emojiModal.classList.add('hidden'));
 
 async function selectEmoji(selectedEmoji) {
     if(!selectedEmoji) return;
     document.getElementById('btn-open-emoji-picker').textContent = selectedEmoji;
-    userProfile.emoji = selectedEmoji; emojiModal.classList.add('hidden');
+    userProfile.emoji = selectedEmoji;
+    emojiModal.classList.add('hidden');
     await updateDoc(doc(db, "users", currentUser.uid), { emoji: selectedEmoji });
 }
 
-document.getElementById('btn-save-custom-emoji')?.addEventListener('click', () => { 
-    const custom = document.getElementById('custom-emoji-input').value.trim(); 
-    if (custom) selectEmoji(custom); 
+document.getElementById('btn-save-custom-emoji')?.addEventListener('click', () => {
+     const custom = document.getElementById('custom-emoji-input').value.trim();
+     if (custom) selectEmoji(custom);
 });
 
 document.getElementById('launch-bio')?.addEventListener('blur', async (e) => {
     if (userProfile?.role === 'guest') return;
-    userProfile.bio = e.target.value.trim(); 
-    await updateDoc(doc(db, "users", currentUser.uid), { bio: userProfile.bio }); 
+    userProfile.bio = e.target.value.trim();
+     await updateDoc(doc(db, "users", currentUser.uid), { bio: userProfile.bio });
 });
 
-document.getElementById('btn-edit-board')?.addEventListener('click', async () => { 
-    const txt = prompt("New notice board text:"); 
-    if(txt !== null) await setDoc(doc(db, "app_settings", "launch_screen"), { text: txt }); 
+document.getElementById('btn-edit-board')?.addEventListener('click', async () => {
+     const txt = prompt("New notice board text:");
+     if(txt !== null) await setDoc(doc(db, "app_settings", "launch_screen"), { text: txt });
 });
 
 const settingsModal = document.getElementById('settings-modal');
-document.getElementById('btn-settings')?.addEventListener('click', () => { applySettings(); settingsModal.classList.remove('hidden'); });
+document.getElementById('btn-settings')?.addEventListener('click', () => {
+    applySettings();
+    settingsModal.classList.remove('hidden');
+});
 document.getElementById('settings-close')?.addEventListener('click', () => settingsModal.classList.add('hidden'));
+
 document.getElementById('btn-save-settings')?.addEventListener('click', () => {
     settings.chatBoxLift = document.getElementById('setting-chatbox-lift').checked;
     settings.chatBoxLiftDm = document.getElementById('setting-chatbox-lift-dm').checked;
@@ -484,7 +493,6 @@ document.getElementById('btn-save-settings')?.addEventListener('click', () => {
     settings.likeToast = document.getElementById('setting-like-toast').checked;
     settings.soundEnabled = document.getElementById('setting-sound-enabled').checked;
     settings.fullScreen = document.getElementById('setting-fullscreen').checked;
-
     localStorage.setItem('pensup_lift', settings.chatBoxLift);
     localStorage.setItem('pensup_lift_dm', settings.chatBoxLiftDm);
     localStorage.setItem('pensup_force_toast', settings.forceToast);
@@ -493,8 +501,8 @@ document.getElementById('btn-save-settings')?.addEventListener('click', () => {
     localStorage.setItem('pensup_like_toast', settings.likeToast);
     localStorage.setItem('pensup_sound', settings.soundEnabled);
     localStorage.setItem('pensup_fullscreen', settings.fullScreen);
-
-    applySettings(); settingsModal.classList.add('hidden');
+    applySettings();
+    settingsModal.classList.add('hidden');
 });
 
 document.getElementById('btn-enter-chat').onclick = () => {
@@ -504,55 +512,61 @@ document.getElementById('btn-enter-chat').onclick = () => {
         UI.input.disabled = true;
         UI.sendBtn.disabled = true;
     }
-    applySettings(); loadMessages();
+    applySettings();
+    loadMessages();
 };
-document.getElementById('btn-back-launch').onclick = () => { UI.app.classList.replace('flex', 'hidden'); UI.launch.classList.remove('hidden'); if(unsubMsg) unsubMsg(); };
-document.getElementById('user-badge').onclick = () => { if(currentUser) showProfile(currentUser.uid); };
 
-// --- PAGINATED CHAT LOAD (LOADS LATEST AT BOTTOM, MORE BUTTON ON SCROLL TO TOP) ---
+document.getElementById('btn-back-launch').onclick = () => {
+    UI.app.classList.replace('flex', 'hidden');
+    UI.launch.classList.remove('hidden');
+    if(unsubMsg) unsubMsg();
+};
+
+document.getElementById('user-badge').onclick = () => {
+    if(currentUser) showProfile(currentUser.uid);
+};
+
+// --- PAGINATED CHAT LOAD ---
 function loadMessages() {
-    if (unsubMsg) unsubMsg(); isInitialLoadDone = false;
+    if (unsubMsg) unsubMsg();
+    isInitialLoadDone = false;
     UI.msgContainer.innerHTML = '<div id="chat-loading" class="text-center italic text-slate-500 my-auto">Flipping chat pages...</div>';
-    
+         
     unsubMsg = onSnapshot(query(collection(db, `rooms/${ROOM_ID}/messages`), orderBy("createdAt", "desc"), limit(15)), 
         (snapshot) => {
             const loadingEl = document.getElementById('chat-loading');
             if (loadingEl) loadingEl.remove();
-            
+                         
             const docs = snapshot.docs;
             if (docs.length > 0) oldestMessageDoc = docs[docs.length - 1];
-            
+                         
             const currentScrollTop = UI.msgContainer.scrollTop;
             const isAtBottom = (UI.msgContainer.scrollHeight - UI.msgContainer.clientHeight - currentScrollTop) < 50;
-
-            // Render existing messages in container
             const existingMsgs = Array.from(UI.msgContainer.querySelectorAll('[id^="msg-"]'));
+            
             if (existingMsgs.length === 0 || !isInitialLoadDone) {
                 UI.msgContainer.innerHTML = '';
-                // Add "Load More" button at top if there might be more messages
                 const loadMoreBtn = document.createElement('button');
                 loadMoreBtn.id = 'load-more-chat-btn';
                 loadMoreBtn.className = 'mx-auto my-2 px-3 py-1 bg-amber-200 text-amber-950 font-bold text-xs rounded sketched-border hover:bg-amber-300';
-                loadMoreBtn.textContent = '📜 Load Older Messages';
+                loadMoreBtn.textContent = '⬆️ Load Older Messages';
                 loadMoreBtn.onclick = loadOlderMessages;
                 UI.msgContainer.appendChild(loadMoreBtn);
-
                 const pinnedList = [];
                 docs.reverse().forEach(docSnap => {
-                    const data = docSnap.data(); 
+                    const data = docSnap.data();
                     renderMessage(docSnap.id, data, UI.msgContainer, ROOM_ID);
                     if (data.isPinned && !data.isDeleted) pinnedList.push({ id: docSnap.id, ...data });
                 });
-                currentPinnedCount = pinnedList.length; renderPinnedSection(pinnedList);
+                currentPinnedCount = pinnedList.length;
+                renderPinnedSection(pinnedList);
                 UI.msgContainer.scrollTo(0, UI.msgContainer.scrollHeight);
             }
-
             if (isInitialLoadDone) {
                 snapshot.docChanges().forEach((change) => {
                     const data = change.doc.data();
                     if (change.type === "added" && data.senderId !== currentUser.uid && !data.isDeleted) {
                         notifyUser(data.senderName, data.text, 'chat');
-                        // append new message
                         renderMessage(change.doc.id, data, UI.msgContainer, ROOM_ID);
                         UI.msgContainer.scrollTo(0, UI.msgContainer.scrollHeight);
                     }
@@ -585,7 +599,7 @@ async function loadOlderMessages() {
             renderMessage(docSnap.id, docSnap.data(), frag, ROOM_ID);
         });
         loadBtn?.after(frag);
-        if (loadBtn) loadBtn.textContent = '📜 Load Older Messages';
+        if (loadBtn) loadBtn.textContent = '⬆️ Load Older Messages';
     } catch (e) {
         triggerQuotaWarning();
         if (loadBtn) loadBtn.textContent = 'Failed to load';
@@ -600,7 +614,7 @@ function renderPinnedSection(pinnedList) {
     banner.classList.remove('hidden'); container.innerHTML = '';
     pinnedList.slice(0, 5).forEach((item) => {
         const div = document.createElement('div'); div.className = "flex items-center justify-between text-sm bg-white p-1.5 sketched-border-alt gap-2";
-        const unpinBtn = userProfile && userProfile.role === 'super_admin' ? `<button onclick="togglePin('${item.id}', false)" class="text-rose-500 font-bold hover:scale-110 ml-2" title="Unpin Note">✖</button>` : '';
+        const unpinBtn = userProfile && userProfile.role === 'super_admin' ? `<button onclick="togglePin('${item.id}', false)" class="text-rose-500 font-bold hover:scale-110 ml-2" title="Unpin Note">📌</button>` : '';
         div.innerHTML = `<div class="flex items-center gap-1.5 overflow-hidden text-ellipsis whitespace-nowrap cursor-pointer flex-1" onclick="jumpToMessage('${item.id}')"><span class="font-bold text-indigo-600 shrink-0">${escapeHTML(item.senderName)}:</span><span class="text-slate-700 overflow-hidden text-ellipsis">${parseTagsAndLinks(item.text)}</span></div>${unpinBtn}`;
         container.appendChild(div);
     });
@@ -608,7 +622,8 @@ function renderPinnedSection(pinnedList) {
 
 document.getElementById('btn-toggle-pinned-list')?.addEventListener('click', (e) => {
     const list = document.getElementById('pinned-notes-list');
-    list.classList.toggle('hidden'); e.target.textContent = list.classList.contains('hidden') ? "Expand ▼" : "Collapse ▲";
+    list.classList.toggle('hidden');
+    e.target.textContent = list.classList.contains('hidden') ? "Expand ▼" : "Collapse ▲";
 });
 
 window.jumpToMessage = (id) => {
@@ -626,7 +641,7 @@ async function sendMessage(text) {
     try {
         if (settings.soundEnabled) { writeSound.currentTime = 0; writeSound.play().catch(e => {}); }
         await addDoc(collection(db, `rooms/${ROOM_ID}/messages`), {
-            senderId: currentUser.uid, senderName: userProfile.username, senderEmoji: userProfile.emoji || '👤',
+            senderId: currentUser.uid, senderName: userProfile.username, senderEmoji: userProfile.emoji || '😀',
             text: text, createdAt: serverTimestamp(), isDeleted: false, isPinned: false
         });
         UI.input.value = ''; updateInput();
@@ -637,11 +652,17 @@ async function sendMessage(text) {
 }
 
 UI.sendBtn.onclick = () => { if (UI.input.value.trim()) sendMessage(UI.input.value.trim()); };
-const updateInput = () => { if(userProfile?.role === 'guest') return; UI.sendBtn.disabled = !UI.input.value.trim(); UI.input.style.height = 'auto'; UI.input.style.height = Math.min(UI.input.scrollHeight, 120) + 'px'; };
+
+const updateInput = () => {
+    if(userProfile?.role === 'guest') return;
+    UI.sendBtn.disabled = !UI.input.value.trim();
+    UI.input.style.height = 'auto';
+    UI.input.style.height = Math.min(UI.input.scrollHeight, 120) + 'px';
+};
 UI.input.addEventListener('input', updateInput);
 
-window.deleteMsg = async (roomId, msgId) => { 
-    if(confirm("Rip out this note?")) { await updateDoc(doc(db, `rooms/${roomId}/messages`, msgId), { isDeleted: true, deletedBy: userProfile.username, text: "", isPinned: false }); }
+window.deleteMsg = async (roomId, msgId) => {
+     if(confirm("Rip out this note?")) { await updateDoc(doc(db, `rooms/${roomId}/messages`, msgId), { isDeleted: true, deletedBy: userProfile.username, text: "", isPinned: false }); }
 };
 
 window.toggleExpandMessage = (msgId) => {
@@ -666,25 +687,23 @@ function renderMessage(id, data, containerEl, roomStr) {
     const isSuperAdmin = userProfile && userProfile.role === 'super_admin';
     const canDelete = isSelf || (roomStr === ROOM_ID && userProfile && ['super_admin', 'admin'].includes(userProfile.role));
     const timeStr = data.createdAt ? data.createdAt.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '...';
-    
+         
     let bgClass = isSelf ? 'bg-yellow-100' : 'bg-white';
     if (roomStr.startsWith('dm_')) bgClass = isSelf ? 'bg-blue-100 border-blue-300' : 'bg-white border-amber-200';
-    
+         
     let contentHtml = '';
     const textRaw = data.text || '';
     const tags = extractTagsFromText(textRaw);
     const isLong = textRaw.length > 180;
-
     if (data.isDeleted) {
-        contentHtml = `<span class="italic text-slate-500 text-lg opacity-80">✂ Ripped out by ${escapeHTML(data.deletedBy)}</span>`;
-        bgClass = 'bg-slate-200/50 border-slate-300'; 
-    } else if (isLong) {
+        contentHtml = `<span class="italic text-slate-500 text-lg opacity-80">🗑️ Ripped out by ${escapeHTML(data.deletedBy)}</span>`;
+        bgClass = 'bg-slate-200/50 border-slate-300';
+     } else if (isLong) {
         const truncatedText = textRaw.substring(0, 180) + '...';
         const tagBarHtml = tags.length > 0 ? `
             <div id="msg-tagbar-${id}" class="flex gap-1.5 overflow-x-auto py-1 mt-1 border-t border-slate-200/60 no-scrollbar">
                 ${tags.map(t => `<span onclick="event.stopPropagation(); filterByTag('${t}')" class="text-xs font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded sketched-border-alt shrink-0 cursor-pointer hover:bg-indigo-100">#${escapeHTML(t)}</span>`).join('')}
             </div>` : '';
-
         contentHtml = `
             <div id="msg-trunc-${id}">${parseTagsAndLinks(truncatedText)}</div>
             <div id="msg-full-${id}" class="hidden">${parseTagsAndLinks(textRaw)}</div>
@@ -694,16 +713,14 @@ function renderMessage(id, data, containerEl, roomStr) {
     } else {
         contentHtml = parseTagsAndLinks(textRaw);
     }
-
     const pinBtn = (roomStr === ROOM_ID && isSuperAdmin && !data.isDeleted) ? `<button onclick="togglePin('${id}', ${!data.isPinned})" class="bg-amber-100 text-amber-800 rounded-full w-6 h-6 text-xs flex items-center justify-center hover:scale-110 sketched-border">📌</button>` : '';
-    const delBtn = (canDelete && !data.isDeleted) ? `<button onclick="deleteMsg('${roomStr}', '${id}')" class="bg-rose-200 text-rose-700 rounded-full w-6 h-6 text-xs flex items-center justify-center hover:scale-110 sketched-border">✖</button>` : '';
+    const delBtn = (canDelete && !data.isDeleted) ? `<button onclick="deleteMsg('${roomStr}', '${id}')" class="bg-rose-200 text-rose-700 rounded-full w-6 h-6 text-xs flex items-center justify-center hover:scale-110 sketched-border">🗑️</button>` : '';
     const actionControls = (!data.isDeleted && (pinBtn || delBtn)) ? `<div class="absolute -right-2 -top-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">${pinBtn}${delBtn}</div>` : '';
     const pinnedBadge = data.isPinned ? `<span class="text-xs bg-amber-200 text-amber-900 font-bold px-1.5 py-0.5 rounded sketched-border-alt mb-1 inline-block">📌 Pinned</span>` : '';
-    const header = (!isSelf && roomStr === ROOM_ID) ? `<div class="flex items-center gap-1 mb-1 cursor-pointer hover:opacity-80" onclick="showProfile('${data.senderId}')"><span class="text-2xl">${escapeHTML(data.senderEmoji || '👤')}</span><span class="text-sm font-bold text-indigo-500 pl-1">${escapeHTML(data.senderName)}</span></div>` : '';
-
+    const header = (!isSelf && roomStr === ROOM_ID) ? `<div class="flex items-center gap-1 mb-1 cursor-pointer hover:opacity-80" onclick="showProfile('${data.senderId}')"><span class="text-2xl">${escapeHTML(data.senderEmoji || '😀')}</span><span class="text-sm font-bold text-indigo-500 pl-1">${escapeHTML(data.senderName)}</span></div>` : '';
     const wrapper = document.createElement('div');
-    wrapper.id = `msg-${id}`; 
-    wrapper.className = `group flex flex-col gap-1 max-w-[85%] animate-pop relative transition-all duration-300 ${isSelf ? 'self-end items-end' : 'self-start items-start ml-10 sm:ml-12'}`;
+    wrapper.id = `msg-${id}`;
+     wrapper.className = `group flex flex-col gap-1 max-w-[85%] animate-pop relative transition-all duration-300 ${isSelf ? 'self-end items-end' : 'self-start items-start ml-10 sm:ml-12'}`;
     wrapper.innerHTML = `${header}${pinnedBadge}<div class="${bgClass} text-slate-800 p-2.5 text-2xl sketched-border relative break-words shadow-xs">${contentHtml} ${actionControls}</div><span class="text-xs font-bold opacity-60 px-1 mt-0.5">${timeStr}</span>`;
     containerEl.appendChild(wrapper);
 }
@@ -712,9 +729,9 @@ function calculateUserBadges(userData, postCount = 0) {
     const badges = [];
     const role = userData.role || 'user';
     const followers = userData.followersCount || 0;
-    if (['super_admin', 'admin'].includes(role)) badges.push({ title: "👑 Notebook Admin", bg: "bg-amber-200 text-amber-900 border-amber-400" });
+    if (['super_admin', 'admin'].includes(role)) badges.push({ title: "🛡️ Notebook Admin", bg: "bg-amber-200 text-amber-900 border-amber-400" });
     if (postCount >= 5) badges.push({ title: "✍️ Active Scribbler", bg: "bg-indigo-100 text-indigo-800 border-indigo-300" });
-    if (followers >= 3) badges.push({ title: "🌟 Popular Note", bg: "bg-emerald-100 text-emerald-800 border-emerald-300" });
+    if (followers >= 3) badges.push({ title: "⭐ Popular Note", bg: "bg-emerald-100 text-emerald-800 border-emerald-300" });
     return badges;
 }
 
@@ -727,7 +744,6 @@ window.toggleFollow = async (targetUid) => {
             await updateDoc(userRef, { following: arrayRemove(targetUid) });
         } else {
             await updateDoc(userRef, { following: arrayUnion(targetUid) });
-            // Send notification for new follower
             await addDoc(collection(db, `users/${targetUid}/notifications`), {
                 type: 'follow', senderName: userProfile.username, text: `started following you!`, createdAt: serverTimestamp()
             });
@@ -747,6 +763,7 @@ document.getElementById('btn-open-doodle-modal')?.addEventListener('click', () =
     if(ctx) ctx.strokeStyle = '#334155', ctx.lineWidth = 3, ctx.lineCap = 'round';
     if (!attachedDoodleBase64 && ctx) ctx.clearRect(0, 0, doodleCanvas.width, doodleCanvas.height);
 });
+
 document.getElementById('doodle-close')?.addEventListener('click', () => doodleModal.classList.add('hidden'));
 
 document.getElementById('btn-clear-doodle')?.addEventListener('click', () => {
@@ -762,10 +779,12 @@ const getPos = (e) => {
 
 if(doodleCanvas) {
     doodleCanvas.onmousedown = doodleCanvas.ontouchstart = (e) => {
-        isDrawing = true; const pos = getPos(e); ctx.beginPath(); ctx.moveTo(pos.x, pos.y); e.preventDefault();
+        isDrawing = true; const pos = getPos(e); ctx.beginPath(); ctx.moveTo(pos.x, pos.y);
+        e.preventDefault();
     };
     doodleCanvas.onmousemove = doodleCanvas.ontouchmove = (e) => {
-        if (!isDrawing) return; const pos = getPos(e); ctx.lineTo(pos.x, pos.y); ctx.stroke(); e.preventDefault();
+        if (!isDrawing) return; const pos = getPos(e); ctx.lineTo(pos.x, pos.y); ctx.stroke();
+        e.preventDefault();
     };
     window.onmouseup = window.ontouchend = () => { isDrawing = false; };
 }
@@ -786,15 +805,16 @@ let activeProfileUid = null;
 window.showProfile = async (uid) => {
     activeProfileUid = uid;
     const pModal = document.getElementById('profile-modal');
-    pModal.classList.remove('hidden'); 
+    pModal.classList.remove('hidden');
+     
     document.getElementById('p-modal-name').textContent = "Loading...";
     document.getElementById('profile-posts-list').innerHTML = '<div class="text-center text-slate-500 italic mt-4">Loading posts...</div>';
-    
+         
     const dmBtn = document.getElementById('p-modal-dm-btn');
     const followBtn = document.getElementById('p-modal-follow-btn');
     const createBox = document.getElementById('create-post-box');
     const deleteAccountBox = document.getElementById('delete-account-container');
-    
+         
     if(currentUser && uid === currentUser.uid && userProfile?.role !== 'guest') {
         dmBtn.classList.add('hidden'); followBtn.classList.add('hidden');
         createBox.classList.remove('hidden'); deleteAccountBox.classList.remove('hidden');
@@ -804,29 +824,26 @@ window.showProfile = async (uid) => {
         if(userProfile?.role !== 'guest' && currentUser) followBtn.classList.remove('hidden');
         else followBtn.classList.add('hidden');
         createBox.classList.add('hidden'); deleteAccountBox.classList.add('hidden');
-        
+                 
         if (currentUser) {
             const isFollowing = (userProfile.following || []).includes(uid);
-            followBtn.textContent = isFollowing ? "⭐ Following" : "+ Follow";
+            followBtn.textContent = isFollowing ? "✓ Following" : "+ Follow";
             followBtn.onclick = () => toggleFollow(uid);
         }
     }
-
     try {
         const snap = await getDoc(doc(db, "users", uid));
         if(snap.exists()) {
             const p = snap.data();
-            document.getElementById('p-modal-emoji').textContent = p.emoji || '👤';
+            document.getElementById('p-modal-emoji').textContent = p.emoji || '😀';
             document.getElementById('p-modal-name').textContent = p.username;
             document.getElementById('p-modal-role').textContent = (p.role || 'user').replace('_', ' ').toUpperCase();
             document.getElementById('p-modal-bio').textContent = p.bio ? `"${p.bio}"` : '"Quiet observer."';
             document.getElementById('p-modal-following-count').textContent = `${(p.following || []).length} Following`;
             dmBtn.onclick = () => openDmChat(uid, p.username, p.emoji, p.bio);
-
             const followersSnap = await getDocs(query(collection(db, "users"), where("following", "array-contains", uid)));
             const userPostsSnap = await getDocs(collection(db, `users/${uid}/posts`));
             document.getElementById('p-modal-followers-count').textContent = `${followersSnap.size} Followers`;
-
             const earnedBadges = calculateUserBadges({ ...p, followersCount: followersSnap.size }, userPostsSnap.size);
             let badgesContainer = document.getElementById('p-modal-badges');
             if (!badgesContainer) {
@@ -889,32 +906,29 @@ function loadProfilePosts(uid) {
 
 function renderPostCard(postId, post, ownerUid, containerEl, canDelete) {
     const likes = post.likes || []; const dislikes = post.dislikes || [];
-    const hasLiked = currentUser && likes.includes(currentUser.uid); 
+    const hasLiked = currentUser && likes.includes(currentUser.uid);
     const hasDisliked = currentUser && dislikes.includes(currentUser.uid);
-    
+         
     const div = document.createElement('div');
     div.id = `post-${postId}`;
     div.className = "bg-white p-3.5 sketched-border-alt flex flex-col gap-2 relative group shadow-xs transition-all duration-500 paper-mask";
     const timeStr = post.createdAt ? post.createdAt.toDate().toLocaleDateString() : '';
-    
-    const deleteBtnHtml = canDelete ? `<button onclick="deletePost('${ownerUid}', '${postId}')" class="text-rose-500 font-bold p-1">✖</button>` : '';
+         
+    const deleteBtnHtml = canDelete ? `<button onclick="deletePost('${ownerUid}', '${postId}')" class="text-rose-500 font-bold p-1">🗑️</button>` : '';
     const authorHeader = post.authorName ? `
         <div class="flex items-center justify-between pb-1.5 border-b border-slate-200/60">
             <div class="flex items-center gap-2 cursor-pointer" onclick="showProfile('${ownerUid}')">
-                <span class="text-xl bg-yellow-100 p-1 rounded-full sketched-border shrink-0">${escapeHTML(post.authorEmoji || '👤')}</span>
+                <span class="text-xl bg-yellow-100 p-1 rounded-full sketched-border shrink-0">${escapeHTML(post.authorEmoji || '😀')}</span>
                 <span class="font-bold text-sm text-indigo-600">@${escapeHTML(post.authorName)}</span>
             </div>
             ${deleteBtnHtml}
         </div>` : '';
-
     const doodleImgHtml = post.doodleImage ? `<div class="mt-1"><img src="${post.doodleImage}" class="max-h-48 rounded sketched-border bg-white p-1 object-contain"></div>` : '';
     const shareUrl = `${window.location.origin}${window.location.pathname}?post=${postId}`;
-
     const textRaw = post.text || '';
     const tags = extractTagsFromText(textRaw);
     const isLong = textRaw.length > 180;
     let bodyContentHtml = '';
-
     if (isLong) {
         const truncatedText = textRaw.substring(0, 180) + '...';
         const tagBarHtml = tags.length > 0 ? `
@@ -930,7 +944,6 @@ function renderPostCard(postId, post, ownerUid, containerEl, canDelete) {
     } else {
         bodyContentHtml = parseTagsAndLinks(textRaw);
     }
-
     div.innerHTML = `
         ${authorHeader}
         <div class="text-lg text-slate-800 break-words my-1 font-['Patrick_Hand'] leading-relaxed">${bodyContentHtml}</div>
@@ -938,7 +951,7 @@ function renderPostCard(postId, post, ownerUid, containerEl, canDelete) {
         <div class="flex justify-between items-center text-xs border-t border-slate-200/60 pt-2 mt-1 flex-wrap gap-2">
             <div class="flex items-center gap-2">
                 <span class="text-slate-400 font-bold">${timeStr}</span>
-                <button onclick="exportPostAsImage('post-${postId}')" class="no-export text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded sketched-border-alt">📷 Export</button>
+                <button onclick="exportPostAsImage('post-${postId}')" class="no-export text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded sketched-border-alt">📥 Export</button>
                 <button onclick="navigator.clipboard.writeText('${shareUrl}'); alert('Link copied!');" class="no-export text-slate-500 font-bold">🔗 Share</button>
             </div>
             <div class="no-export flex gap-3">
@@ -983,7 +996,7 @@ document.getElementById('btn-publish-post')?.addEventListener('click', async () 
     try {
         const postData = {
             text: txt || '', doodleImage: attachedDoodleBase64 || null, createdAt: serverTimestamp(),
-            likes: [], dislikes: [], authorId: currentUser.uid, authorName: userProfile.username, authorEmoji: userProfile.emoji || '👤'
+            likes: [], dislikes: [], authorId: currentUser.uid, authorName: userProfile.username, authorEmoji: userProfile.emoji || '😀'
         };
         const docRef = await addDoc(collection(db, `users/${currentUser.uid}/posts`), postData);
         await setDoc(doc(db, `global_posts`, docRef.id), postData);
@@ -1045,26 +1058,22 @@ function loadGlobalFeed(scrollToPostId = null) {
     const container = document.getElementById('global-feed-list');
     if(!container) return;
     container.innerHTML = '<div class="text-center italic text-slate-500 mt-6">Ranking global notebook feed...</div>';
-
     unsubFeed = onSnapshot(query(collection(db, "global_posts"), orderBy("createdAt", "desc"), limit(10)), (snapshot) => {
         container.innerHTML = '';
         if (snapshot.empty) { container.innerHTML = '<div class="text-center italic text-slate-500 mt-6">No public posts yet.</div>'; return; }
-        
+                 
         const docs = snapshot.docs;
         if (docs.length > 0) lastVisibleFeedDoc = docs[docs.length - 1];
-
         globalPostsCache = [];
         docs.forEach(docSnap => globalPostsCache.push({ id: docSnap.id, ...docSnap.data() }));
         applyFeedFilterAndSort();
-
-        // Add "Load More Posts" button at bottom of feed
+        
         const loadMoreFeedBtn = document.createElement('button');
         loadMoreFeedBtn.id = 'load-more-feed-btn';
         loadMoreFeedBtn.className = 'w-full py-2 my-2 bg-indigo-100 text-indigo-900 font-bold text-sm rounded sketched-border hover:bg-indigo-200';
-        loadMoreFeedBtn.textContent = '📜 Load More Posts';
+        loadMoreFeedBtn.textContent = '⬇️ Load More Posts';
         loadMoreFeedBtn.onclick = loadMoreFeedPosts;
         container.appendChild(loadMoreFeedBtn);
-
         if (scrollToPostId) {
             setTimeout(() => {
                 const targetEl = document.getElementById(`post-${scrollToPostId}`);
@@ -1086,7 +1095,6 @@ async function loadMoreFeedPosts() {
         const snap = await getDocs(nextQuery);
         loadBtn?.remove();
         if (snap.empty) return;
-
         lastVisibleFeedDoc = snap.docs[snap.docs.length - 1];
         const container = document.getElementById('global-feed-list');
         snap.docs.forEach(docSnap => {
@@ -1095,12 +1103,10 @@ async function loadMoreFeedPosts() {
             const canDelete = currentUser && (post.authorId === currentUser.uid || ['super_admin', 'admin'].includes(userProfile?.role));
             renderPostCard(post.id, post, post.authorId, container, canDelete);
         });
-
-        // Re-add button at bottom
         const newLoadMoreBtn = document.createElement('button');
         newLoadMoreBtn.id = 'load-more-feed-btn';
         newLoadMoreBtn.className = 'w-full py-2 my-2 bg-indigo-100 text-indigo-900 font-bold text-sm rounded sketched-border hover:bg-indigo-200';
-        newLoadMoreBtn.textContent = '📜 Load More Posts';
+        newLoadMoreBtn.textContent = '⬇️ Load More Posts';
         newLoadMoreBtn.onclick = loadMoreFeedPosts;
         container.appendChild(newLoadMoreBtn);
     } catch (e) {
@@ -1116,7 +1122,6 @@ function applyFeedFilterAndSort() {
     const sortBy = document.getElementById('feed-sort-select')?.value || 'recent';
     const dateFilter = document.getElementById('feed-date-select')?.value || 'all';
     const now = Date.now();
-
     let result = globalPostsCache.filter(p => {
         const text = (p.text || '').toLowerCase();
         const author = (p.authorName || '').toLowerCase();
@@ -1129,7 +1134,6 @@ function applyFeedFilterAndSort() {
         }
         return matchesQuery && matchesDate;
     });
-
     result.sort((a, b) => {
         const aLikes = (a.likes || []).length; const bLikes = (b.likes || []).length;
         const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
@@ -1139,7 +1143,6 @@ function applyFeedFilterAndSort() {
         if (sortBy === 'oldest') return aTime - bTime;
         return bTime - aTime; 
     });
-
     renderFeedList(result, container);
 }
 
@@ -1176,7 +1179,7 @@ document.getElementById('btn-publish-sticky')?.addEventListener('click', async (
     try {
         await addDoc(collection(db, "sticky_board"), {
             text: txt, color: currentStickyColor, authorName: userProfile.username,
-            authorEmoji: userProfile.emoji || '👤', authorId: currentUser.uid, createdAt: serverTimestamp()
+            authorEmoji: userProfile.emoji || '😀', authorId: currentUser.uid, createdAt: serverTimestamp()
         });
         input.value = '';
     } catch(e) { triggerQuotaWarning(); }
@@ -1188,7 +1191,6 @@ function loadStickyNotes() {
     const grid = document.getElementById('sticky-board-grid');
     if(!grid) return;
     grid.innerHTML = '<div class="text-center italic text-slate-500 col-span-full">Pinning sticky notes...</div>';
-
     unsubSticky = onSnapshot(query(collection(db, "sticky_board"), orderBy("createdAt", "desc"), limit(10)), (snapshot) => {
         grid.innerHTML = '';
         if (snapshot.empty) { grid.innerHTML = '<div class="text-center italic text-slate-500 col-span-full">No sticky notes yet.</div>'; return; }
@@ -1202,12 +1204,12 @@ function loadStickyNotes() {
             const canDelete = currentUser && (note.authorId === currentUser.uid || ['super_admin', 'admin'].includes(userProfile?.role));
             const div = document.createElement('div');
             div.className = `${colorClass} p-3.5 sketched-border flex flex-col justify-between gap-3 relative shadow-md rotate-[-1deg] min-h-[130px]`;
-            const deleteBtn = canDelete ? `<button onclick="deleteStickyNote('${docSnap.id}')" class="text-rose-600 font-bold text-xs bg-white/60 rounded px-1.5 py-0.5">✖</button>` : '';
+            const deleteBtn = canDelete ? `<button onclick="deleteStickyNote('${docSnap.id}')" class="text-rose-600 font-bold text-xs bg-white/60 rounded px-1.5 py-0.5">🗑️</button>` : '';
             div.innerHTML = `
                 <div class="absolute -top-3 left-1/2 -translate-x-1/2 text-xl">📌</div>
                 <div class="text-lg leading-snug break-words mt-1">${escapeHTML(note.text)}</div>
                 <div class="flex justify-between items-center text-xs border-t border-black/10 pt-2 mt-1">
-                    <span class="font-bold cursor-pointer" onclick="showProfile('${note.authorId}')">${escapeHTML(note.authorEmoji||'👤')} @${escapeHTML(note.authorName)}</span>
+                    <span class="font-bold cursor-pointer" onclick="showProfile('${note.authorId}')">${escapeHTML(note.authorEmoji||'😀')} @${escapeHTML(note.authorName)}</span>
                     ${deleteBtn}
                 </div>
             `;
@@ -1245,7 +1247,6 @@ function loadArcadePuzzles() {
     const arcadeList = document.getElementById('arcade-list');
     if(!arcadeList) return;
     arcadeList.innerHTML = '<div class="text-center italic text-slate-500">Loading arcade games...</div>';
-
     unsubPuzzles = onSnapshot(query(collection(db, "puzzles"), orderBy("createdAt", "desc"), limit(10)), (snapshot) => {
         arcadeList.innerHTML = '';
         if (snapshot.empty) { arcadeList.innerHTML = '<div class="text-center italic text-slate-500 col-span-2">No puzzles published yet.</div>'; return; }
@@ -1257,7 +1258,7 @@ function loadArcadePuzzles() {
             div.innerHTML = `
                 <div class="font-bold text-lg text-indigo-700 truncate">${escapeHTML(puzzle.title)}</div>
                 <div class="text-xs text-slate-500 italic">By @${escapeHTML(puzzle.authorName || 'admin')}</div>
-                <button class="mt-1 bg-emerald-500 text-white font-bold py-1 px-2 rounded sketched-border-alt text-sm">Play ➔</button>
+                <button class="mt-1 bg-emerald-500 text-white font-bold py-1 px-2 rounded sketched-border-alt text-sm">Play 🎮</button>
             `;
             div.onclick = () => runPuzzleSnippet(puzzle.title, puzzle.code);
             arcadeList.appendChild(div);
@@ -1271,7 +1272,7 @@ function runPuzzleSnippet(title, htmlCode) {
     if(!container) return;
     container.innerHTML = `
         <div class="flex justify-between items-center border-b pb-2">
-            <span class="font-['Permanent_Marker'] text-2xl text-amber-900">🕹️ ${escapeHTML(title)}</span>
+            <span class="font-['Permanent_Marker'] text-2xl text-amber-900">🎮 ${escapeHTML(title)}</span>
         </div>
         <div class="flex-1 w-full h-[450px] bg-slate-900 rounded sketched-border overflow-hidden relative">
             <iframe id="puzzle-sandbox" class="w-full h-full border-0 bg-white" sandbox="allow-scripts allow-modals"></iframe>
@@ -1281,7 +1282,7 @@ function runPuzzleSnippet(title, htmlCode) {
     if(iframe) iframe.srcdoc = htmlCode;
 }
 
-let activeDmId = null, activeDmTargetId = null, activeDmTargetUser = null, allUsersCache = [], activeDmTab = 'all'; 
+let activeDmId = null, activeDmTargetId = null, activeDmTargetUser = null, allUsersCache = [], activeDmTab = 'all';
 const dmDirModal = document.getElementById('dm-directory-modal');
 const dmChatModal = document.getElementById('dm-chat-modal');
 const dmInput = document.getElementById('dm-message-input');
@@ -1330,28 +1331,26 @@ function renderUserDirectory(users) {
     const searchQ = document.getElementById('dm-search-input')?.value.trim().toLowerCase() || '';
     if(!list) return;
     list.innerHTML = '';
-    
+         
     let filtered = users.filter(u => {
         const matchesSearch = u.username.toLowerCase().includes(searchQ) || (u.bio && u.bio.toLowerCase().includes(searchQ));
         if (activeDmTab === 'following') return matchesSearch && (userProfile?.following || []).includes(u.id);
         return matchesSearch;
     });
-
     if (filtered.length === 0) { list.innerHTML = `<div class="text-center p-6 text-slate-400 italic">No members found.</div>`; return; }
-
     filtered.forEach(u => {
         const div = document.createElement('div');
         div.className = "flex items-center justify-between p-3 bg-white/80 sketched-border cursor-pointer hover:bg-amber-100/80 gap-2";
         div.onclick = () => openDmChat(u.id, u.username, u.emoji, u.bio);
         div.innerHTML = `
             <div class="flex items-center gap-3 overflow-hidden min-w-0">
-                <span class="text-3xl bg-amber-50 p-1.5 rounded-full sketched-border shrink-0">${escapeHTML(u.emoji||'👤')}</span>
+                <span class="text-3xl bg-amber-50 p-1.5 rounded-full sketched-border shrink-0">${escapeHTML(u.emoji||'😀')}</span>
                 <div class="flex flex-col min-w-0">
                     <span class="font-bold text-lg text-slate-800 truncate">${escapeHTML(u.username)}</span>
                     <span class="text-xs text-slate-500 italic truncate">${escapeHTML(u.bio || '')}</span>
                 </div>
             </div>
-            <button class="bg-blue-500 text-white text-xs font-bold px-2.5 py-1.5 rounded sketched-border-alt">Chat ➔</button>
+            <button class="bg-blue-500 text-white text-xs font-bold px-2.5 py-1.5 rounded sketched-border-alt">Chat ✉️</button>
         `;
         list.appendChild(div);
     });
@@ -1363,12 +1362,10 @@ function openDmChat(targetUid, targetName, targetEmoji, targetBio) {
     document.getElementById('profile-modal')?.classList.add('hidden');
     dmDirModal?.classList.add('hidden');
     dmChatModal?.classList.remove('hidden');
-
     activeDmTargetUser = { id: targetUid, username: targetName, emoji: targetEmoji, bio: targetBio };
     document.getElementById('dm-chat-title').textContent = `@${targetName}`;
-    document.getElementById('dm-header-avatar').textContent = targetEmoji || '👤';
+    document.getElementById('dm-header-avatar').textContent = targetEmoji || '😀';
     document.getElementById('dm-header-bio').textContent = targetBio ? `"${targetBio}"` : "Private Note";
-
     const uids = [currentUser.uid, targetUid].sort();
     activeDmId = `dm_${uids[0]}_${uids[1]}`;
     activeDmTargetId = targetUid;
@@ -1386,7 +1383,7 @@ function loadDmMessages() {
     const container = document.getElementById('dm-messages-container');
     if(!container) return;
     container.innerHTML = '<div class="text-center mt-6 font-bold text-slate-500 italic">Opening letter...</div>';
-    
+         
     unsubDmMsg = onSnapshot(query(collection(db, `rooms/${activeDmId}/messages`), orderBy("createdAt", "desc"), limit(15)), (snapshot) => {
         container.innerHTML = '';
         if(snapshot.empty) { container.innerHTML = `<div class="text-center p-6 text-slate-500 italic">No private notes yet.</div>`; return; }
@@ -1401,10 +1398,9 @@ dmSendBtn.onclick = async () => {
     if(!text || !activeDmId || userProfile.suspended || userProfile.role === 'guest') return;
     try {
         await addDoc(collection(db, `rooms/${activeDmId}/messages`), {
-            senderId: currentUser.uid, senderName: userProfile.username, senderEmoji: userProfile.emoji || '👤',
+            senderId: currentUser.uid, senderName: userProfile.username, senderEmoji: userProfile.emoji || '😀',
             text: text, createdAt: serverTimestamp(), isDeleted: false, isPinned: false
         });
-        // Send DM notification to recipient
         if (activeDmTargetId) {
             await addDoc(collection(db, `users/${activeDmTargetId}/notifications`), {
                 type: 'dm', senderName: userProfile.username, text: text, createdAt: serverTimestamp()
@@ -1433,4 +1429,5 @@ UI.adminBtn.onclick = async () => {
         });
     } catch (e) { list.innerHTML = `<span class="text-rose-600">Failed to load.</span>`; }
 };
+
 document.getElementById('admin-close')?.addEventListener('click', () => adminModal?.classList.add('hidden'));

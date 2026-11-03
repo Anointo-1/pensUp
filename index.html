@@ -3,34 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PensUp Pro — Handwritten Notebook & Study Group</title>
-    
+    <title>PensUp Pro – Handwritten Notebook & Study Group</title>
+         
     <!-- Absolute Favicon & Search Preview Icons -->
     <link rel="icon" type="image/jpeg" href="https://anointo-1.github.io/pensUp/PensUp.jpg">
     <link rel="shortcut icon" type="image/jpeg" href="https://anointo-1.github.io/pensUp/PensUp.jpg">
     <link rel="apple-touch-icon" href="https://anointo-1.github.io/pensUp/PensUp.jpg">
-
     <!-- Primary Meta & SEO -->
     <meta id="meta-description" name="description" content="A handwritten notebook-style real-time study group, chat, and interactive arcade application.">
-    
+         
     <!-- Open Graph / Social Media -->
-    <meta id="og-title" property="og:title" content="PensUp Pro — Handwritten Notebook & Study Group">
+    <meta id="og-title" property="og:title" content="PensUp Pro – Handwritten Notebook & Study Group">
     <meta id="og-description" property="og:description" content="A handwritten notebook-style real-time study group, chat, and interactive arcade application.">
     <meta id="og-image" property="og:image" content="https://anointo-1.github.io/pensUp/PensUp.jpg">
     <meta property="og:url" content="https://anointo-1.github.io/pensUp/">
     <meta property="og:type" content="website">
-
     <!-- Twitter -->
-    <meta id="tw-title" name="twitter:title" content="PensUp Pro — Handwritten Notebook & Study Group">
+    <meta id="tw-title" name="twitter:title" content="PensUp Pro – Handwritten Notebook & Study Group">
     <meta id="tw-description" name="twitter:description" content="A handwritten notebook-style real-time study group, chat, and interactive arcade application.">
     <meta name="twitter:card" content="summary_large_image">
-
     <!-- Google Search Console Structured Data -->
     <script type="application/ld+json">
     {
         "@context": "https://schema.org",
         "@type": "DiscussionForumPosting",
-        "headline": "PensUp Pro — Handwritten Notebook & Study Group",
+        "headline": "PensUp Pro – Handwritten Notebook & Study Group",
         "text": "A handwritten notebook-style real-time study group, chat, and interactive arcade application.",
         "datePublished": "2026-02-01T00:00:00Z",
         "url": "https://anointo-1.github.io/pensUp/",
@@ -46,7 +43,6 @@
         }
     }
     </script>
-
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -54,19 +50,16 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body class="h-screen w-full flex flex-col relative overflow-hidden text-lg select-none theme-default">
-
     <!-- Loading Overlay -->
     <div id="auth-loading" class="fixed inset-0 bg-amber-50/90 z-50 flex flex-col items-center justify-center gap-3">
-        <div class="text-4xl animate-spin">✏️</div>
+        <div class="text-4xl animate-spin">⏳</div>
         <div class="font-['Permanent_Marker'] text-2xl text-amber-900">Opening Notebook...</div>
     </div>
-
     <!-- Credit Mode Alert Banner -->
     <div id="credit-mode-banner" class="hidden bg-amber-500 text-slate-950 text-xs font-bold px-3 py-1.5 text-center border-b-2 border-slate-800 z-50 flex justify-between items-center shadow-md">
-        <span>⚡ High traffic detected! We're temporarily pacing requests to keep our free notebook running smoothly.</span>
-        <button onclick="document.getElementById('credit-mode-banner').classList.add('hidden')" class="bg-amber-700 text-white px-2 py-0.5 rounded">Dismiss ✖</button>
+        <span>⚠️ High traffic detected! We're temporarily pacing requests to keep our free notebook running smoothly.</span>
+        <button onclick="document.getElementById('credit-mode-banner').classList.add('hidden')" class="bg-amber-700 text-white px-2 py-0.5 rounded">Dismiss ✕</button>
     </div>
-
     <!-- AUTH SCREEN -->
     <div id="auth-screen" class="flex-1 flex flex-col items-center justify-center p-4 bg-amber-50 relative">
         <div class="w-full max-w-sm bg-white p-6 sketched-border flex flex-col gap-4 shadow-xl -rotate-1">
@@ -74,22 +67,19 @@
                 <h1 class="font-['Permanent_Marker'] text-4xl text-amber-900">PensUp Pro</h1>
                 <p class="text-sm text-slate-600 font-semibold mt-1">Handwritten Study Notes & Community</p>
             </div>
-
             <div id="auth-error" class="hidden bg-rose-100 text-rose-700 p-2 text-sm rounded border border-rose-300 font-bold text-center"></div>
-
             <div class="flex flex-col gap-3">
                 <input type="text" id="auth-username" placeholder="Username" class="p-2.5 bg-amber-50/50 sketched-border-alt outline-none font-bold text-slate-800">
                 <input type="password" id="auth-password" placeholder="Password" class="p-2.5 bg-amber-50/50 sketched-border-alt outline-none font-bold text-slate-800">
-                
+                                
                 <div class="flex gap-2 mt-2">
                     <button id="btn-login" class="flex-1 py-2 bg-indigo-500 text-white font-bold rounded sketched-border hover:bg-indigo-600 transition-colors">Log In</button>
                     <button id="btn-register" class="flex-1 py-2 bg-emerald-500 text-white font-bold rounded sketched-border hover:bg-emerald-600 transition-colors">Register</button>
                 </div>
-                <button id="btn-guest" class="w-full py-2 bg-amber-200 text-amber-950 font-bold rounded sketched-border hover:bg-amber-300 transition-colors mt-1">Browse as Guest ➔</button>
+                <button id="btn-guest" class="w-full py-2 bg-amber-200 text-amber-950 font-bold rounded sketched-border hover:bg-amber-300 transition-colors mt-1">Browse as Guest 👁️</button>
             </div>
         </div>
     </div>
-
     <!-- LAUNCH SCREEN -->
     <div id="launch-screen" class="hidden flex-1 flex flex-col items-center justify-center p-4 bg-amber-50 relative overflow-y-auto">
         <div class="w-full max-w-md bg-white p-6 sketched-border flex flex-col gap-4 shadow-xl rotate-1 my-auto">
@@ -98,14 +88,12 @@
                     <span id="greeting-text" class="text-xs font-bold text-amber-700">Good Day!</span>
                     <h2 id="launch-username" class="font-['Permanent_Marker'] text-3xl text-slate-800">User</h2>
                 </div>
-                <button id="btn-open-emoji-picker" class="text-4xl bg-yellow-100 p-2 rounded-full sketched-border hover:scale-110 transition-transform">👤</button>
+                <button id="btn-open-emoji-picker" class="text-4xl bg-yellow-100 p-2 rounded-full sketched-border hover:scale-110 transition-transform">😀</button>
             </div>
-
             <div>
                 <label class="text-xs font-bold text-slate-500 uppercase">Bio / Status</label>
                 <input type="text" id="launch-bio" placeholder="Scribble a bio..." class="w-full p-2 bg-yellow-50/50 sketched-border-alt outline-none text-slate-800 font-semibold mt-1">
             </div>
-
             <div class="bg-amber-50 p-3 sketched-border-alt relative">
                 <div class="flex justify-between items-center mb-1">
                     <span class="text-xs font-bold text-amber-800">📌 Notice Board</span>
@@ -113,39 +101,34 @@
                 </div>
                 <p id="launch-board-text" class="text-sm font-semibold text-slate-700 italic">Welcome to PensUp Pro!</p>
             </div>
-
             <div class="flex flex-col gap-2 pt-2">
-                <button id="btn-enter-chat" class="w-full py-3 bg-indigo-500 text-white font-bold text-xl rounded sketched-border hover:bg-indigo-600 transition-all shadow-md hover:-translate-y-0.5">Open Notebook ➔</button>
+                <button id="btn-enter-chat" class="w-full py-3 bg-indigo-500 text-white font-bold text-xl rounded sketched-border hover:bg-indigo-600 transition-all shadow-md hover:-translate-y-0.5">Open Notebook 📖</button>
                 <button id="btn-logout-launch" class="w-full py-2 bg-rose-100 text-rose-700 font-bold rounded sketched-border hover:bg-rose-200 transition-colors">Log Out</button>
             </div>
         </div>
     </div>
-
     <!-- MAIN APP SCREEN -->
     <div id="app-screen" class="hidden flex-1 flex-col h-full bg-amber-50 relative overflow-hidden">
         <!-- APP HEADER -->
         <header class="bg-amber-100 border-b-2 border-slate-800 p-2.5 flex items-center justify-between shadow-xs z-20 shrink-0">
             <div class="flex items-center gap-2">
-                <button id="btn-back-launch" class="bg-white p-1.5 rounded sketched-border hover:bg-amber-200 font-bold text-sm">◀ Back</button>
+                <button id="btn-back-launch" class="bg-white p-1.5 rounded sketched-border hover:bg-amber-200 font-bold text-sm">⬅️ Back</button>
                 <span id="user-badge" class="font-['Permanent_Marker'] text-xl text-slate-800 cursor-pointer hover:opacity-80">My Profile</span>
             </div>
-
             <div class="flex items-center gap-2">
                 <span id="online-counter-badge" class="text-xs font-bold bg-emerald-100 text-emerald-800 px-2 py-1 rounded sketched-border-alt">🟢 1 online</span>
-                <button id="btn-open-dms" class="bg-blue-100 text-blue-900 p-1.5 rounded sketched-border hover:bg-blue-200 text-sm font-bold">📫 Mailbox</button>
+                <button id="btn-open-dms" class="bg-blue-100 text-blue-900 p-1.5 rounded sketched-border hover:bg-blue-200 text-sm font-bold">✉️ Mailbox</button>
                 <button id="btn-settings" class="bg-yellow-200 p-1.5 rounded sketched-border hover:bg-yellow-300 text-sm font-bold">⚙️</button>
                 <button id="btn-admin" class="hidden bg-rose-500 text-white p-1.5 rounded sketched-border hover:bg-rose-600 text-sm font-bold">Admin</button>
             </div>
         </header>
-
         <!-- NAVIGATION BAR -->
         <nav class="bg-amber-200/70 p-1.5 border-b border-slate-700 flex gap-1 justify-around shrink-0 z-10">
-            <button id="nav-tab-chat" class="px-3 py-1 font-bold text-sm bg-indigo-500 text-white rounded sketched-border transition-colors">📝 Chat</button>
-            <button id="nav-tab-feed" class="px-3 py-1 font-bold text-sm bg-white text-slate-700 rounded sketched-border hover:bg-yellow-200 transition-colors">🌐 Feed</button>
+            <button id="nav-tab-chat" class="px-3 py-1 font-bold text-sm bg-indigo-500 text-white rounded sketched-border transition-colors">💬 Chat</button>
+            <button id="nav-tab-feed" class="px-3 py-1 font-bold text-sm bg-white text-slate-700 rounded sketched-border hover:bg-yellow-200 transition-colors">📰 Feed</button>
             <button id="nav-tab-arcade" class="px-3 py-1 font-bold text-sm bg-white text-slate-700 rounded sketched-border hover:bg-yellow-200 transition-colors">🕹️ Arcade</button>
-            <button id="nav-tab-sticky" class="px-3 py-1 font-bold text-sm bg-white text-slate-700 rounded sketched-border hover:bg-yellow-200 transition-colors">📌 Sticky</button>
+            <button id="nav-tab-sticky" class="px-3 py-1 font-bold text-sm bg-white text-slate-700 rounded sketched-border hover:bg-yellow-200 transition-colors">📝 Sticky</button>
         </nav>
-
         <!-- PINNED NOTES BANNER -->
         <div id="pinned-banner" class="hidden bg-amber-100/90 border-b border-slate-400 p-2 text-xs flex flex-col gap-1 shrink-0 z-10">
             <div class="flex justify-between items-center font-bold text-amber-900">
@@ -154,30 +137,28 @@
             </div>
             <div id="pinned-notes-list" class="hidden flex flex-col gap-1 mt-1"></div>
         </div>
-
         <!-- MAIN CONTENT VIEWS -->
         <main class="flex-1 relative overflow-hidden flex flex-col">
-            
+                         
             <!-- VIEW: MAIN CHAT -->
             <section id="view-chat" class="flex-1 flex flex-col h-full relative overflow-hidden">
                 <div id="chat-messages" class="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
                     <div id="chat-loading" class="text-center italic text-slate-500 my-auto">Flipping chat pages...</div>
                 </div>
-                
+                                
                 <footer id="chat-footer" class="p-2.5 bg-amber-100 border-t-2 border-slate-800 flex gap-2 items-center shrink-0">
                     <textarea id="message-input" rows="1" placeholder="Scribble a note... (use #tags!)" class="flex-1 p-2 bg-white sketched-border outline-none font-semibold text-slate-800 resize-none max-h-32"></textarea>
                     <button id="btn-send" disabled class="bg-indigo-500 text-white font-bold px-4 py-2 rounded sketched-border disabled:opacity-50 hover:bg-indigo-600 transition-colors">Send</button>
                 </footer>
             </section>
-
             <!-- VIEW: GLOBAL FEED -->
             <section id="view-feed" class="hidden flex-1 flex flex-col h-full p-3 overflow-hidden">
                 <div class="bg-white p-3 sketched-border mb-3 flex flex-col gap-2 shrink-0">
                     <div class="flex gap-2 items-center">
                         <input type="text" id="feed-search-input" placeholder="Search notes, @users, or #tags..." class="flex-1 p-2 bg-amber-50/50 sketched-border-alt text-sm font-semibold outline-none">
-                        <button id="btn-clear-tag-filter" class="hidden text-xs bg-rose-100 text-rose-700 font-bold px-2 py-2 rounded sketched-border">Clear Tag ✖</button>
+                        <button id="btn-clear-tag-filter" class="hidden text-xs bg-rose-100 text-rose-700 font-bold px-2 py-2 rounded sketched-border">Clear Tag ✕</button>
                     </div>
-                    
+                                        
                     <div class="flex gap-2 flex-wrap items-center text-xs font-bold text-slate-600">
                         <span>Sort By:</span>
                         <select id="feed-sort-select" class="p-1 bg-amber-50 border border-slate-300 rounded">
@@ -186,7 +167,6 @@
                             <option value="unpopular">Not Popular</option>
                             <option value="oldest">Oldest</option>
                         </select>
-
                         <span>Date:</span>
                         <select id="feed-date-select" class="p-1 bg-amber-50 border border-slate-300 rounded">
                             <option value="all">All Time</option>
@@ -195,24 +175,19 @@
                         </select>
                     </div>
                 </div>
-
                 <div id="global-feed-list" class="flex-1 overflow-y-auto flex flex-col gap-3 pr-1"></div>
             </section>
-
             <!-- VIEW: ARCADE -->
             <section id="view-arcade" class="hidden flex-1 flex flex-col h-full p-3 overflow-hidden gap-3">
                 <div class="flex justify-between items-center shrink-0">
-                    <span class="font-['Permanent_Marker'] text-2xl text-slate-800">🕹️ Arcade & Code Snippets</span>
+                    <span class="font-['Permanent_Marker'] text-2xl text-slate-800">🎮 Arcade & Code Snippets</span>
                     <button id="btn-open-puzzle-creator" class="hidden text-xs bg-emerald-500 text-white font-bold px-3 py-1.5 rounded sketched-border hover:bg-emerald-600">+ Create Snippet</button>
                 </div>
-
                 <div id="arcade-active-container" class="flex-1 bg-white p-3 sketched-border flex flex-col gap-2">
                     <div class="text-center italic text-slate-500 my-auto">Select a game snippet below to run...</div>
                 </div>
-
                 <div id="arcade-list" class="h-32 shrink-0 overflow-x-auto flex gap-2 py-1"></div>
             </section>
-
             <!-- VIEW: STICKY BOARD -->
             <section id="view-sticky" class="hidden flex-1 flex flex-col h-full p-3 overflow-hidden gap-3">
                 <div id="sticky-creator-box" class="bg-white p-3 sketched-border flex flex-col gap-2 shrink-0">
@@ -227,128 +202,108 @@
                         <button id="btn-publish-sticky" class="bg-indigo-500 text-white text-xs font-bold px-3 py-1.5 rounded sketched-border hover:bg-indigo-600">Pin Note 📌</button>
                     </div>
                 </div>
-
                 <div id="sticky-board-grid" class="flex-1 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 gap-3 p-1"></div>
             </section>
-
         </main>
     </div>
-
     <!-- MODAL: PROFILE & POST CREATOR -->
     <div id="profile-modal" class="hidden fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
         <div id="profile-card-container" class="w-full max-w-md bg-amber-50 p-5 sketched-border flex flex-col gap-3 relative max-h-[90vh] overflow-y-auto shadow-2xl">
-            <button id="profile-close" class="no-export absolute top-3 right-3 text-xl font-bold hover:scale-125">✖</button>
-            
+            <button id="profile-close" class="no-export absolute top-3 right-3 text-xl font-bold hover:scale-125">✕</button>
+                         
             <div class="flex items-center gap-3 border-b border-slate-300 pb-3">
-                <span id="p-modal-emoji" class="text-4xl bg-yellow-100 p-2 rounded-full sketched-border">👤</span>
+                <span id="p-modal-emoji" class="text-4xl bg-yellow-100 p-2 rounded-full sketched-border">😀</span>
                 <div>
                     <h3 id="p-modal-name" class="font-['Permanent_Marker'] text-2xl text-slate-800">User</h3>
                     <span id="p-modal-role" class="text-xs bg-amber-200 text-amber-900 font-bold px-2 py-0.5 rounded sketched-border-alt">USER</span>
                 </div>
             </div>
-
             <p id="p-modal-bio" class="text-sm italic text-slate-600 bg-white p-2 sketched-border-alt">"No bio scribbled."</p>
-
             <div class="flex justify-around text-xs font-bold text-slate-700 py-1 bg-amber-100/60 rounded">
                 <span id="p-modal-followers-count">0 Followers</span>
                 <span id="p-modal-following-count">0 Following</span>
             </div>
-
             <div class="no-export flex gap-2 pt-1">
                 <button id="p-modal-follow-btn" class="hidden flex-1 py-1.5 bg-amber-400 text-amber-950 font-bold text-xs rounded sketched-border">+ Follow</button>
-                <button id="p-modal-dm-btn" class="hidden flex-1 py-1.5 bg-blue-500 text-white font-bold text-xs rounded sketched-border">Send DM ✉</button>
-                <button onclick="exportProfileAsImage()" class="flex-1 py-1.5 bg-indigo-100 text-indigo-900 font-bold text-xs rounded sketched-border">📷 Export Profile</button>
+                <button id="p-modal-dm-btn" class="hidden flex-1 py-1.5 bg-blue-500 text-white font-bold text-xs rounded sketched-border">Send DM ✉️</button>
+                <button onclick="exportProfileAsImage()" class="flex-1 py-1.5 bg-indigo-100 text-indigo-900 font-bold text-xs rounded sketched-border">📥 Export Profile</button>
             </div>
-
             <!-- CREATE PUBLIC POST BOX (ONLY VISIBLE ON OWN PROFILE) -->
             <div id="create-post-box" class="hidden bg-white p-3 sketched-border flex flex-col gap-2 mt-2">
                 <span class="text-xs font-bold text-indigo-700">✍️ Scribble Public Post</span>
                 <textarea id="post-input" rows="2" placeholder="Share a math problem, note, or idea..." class="p-2 bg-amber-50/50 sketched-border-alt text-sm font-semibold outline-none resize-none"></textarea>
-                
+                                
                 <div id="post-doodle-preview-container" class="hidden relative border p-1 rounded bg-slate-50">
                     <img id="post-doodle-preview" class="max-h-24 mx-auto object-contain">
-                    <button id="btn-remove-doodle" class="absolute top-1 right-1 bg-rose-500 text-white rounded-full w-5 h-5 text-xs font-bold">✖</button>
+                    <button id="btn-remove-doodle" class="absolute top-1 right-1 bg-rose-500 text-white rounded-full w-5 h-5 text-xs font-bold">✕</button>
                 </div>
-
                 <div class="flex justify-between items-center pt-1">
                     <button id="btn-open-doodle-modal" class="text-xs font-bold bg-amber-200 text-amber-900 px-2 py-1 rounded sketched-border">🎨 Add Sketch</button>
-                    <button id="btn-publish-post" class="text-xs font-bold bg-indigo-500 text-white px-3 py-1 rounded sketched-border hover:bg-indigo-600">Publish Post ➔</button>
+                    <button id="btn-publish-post" class="text-xs font-bold bg-indigo-500 text-white px-3 py-1 rounded sketched-border hover:bg-indigo-600">Publish Post 🚀</button>
                 </div>
             </div>
-
             <!-- ACCOUNT SELF-DELETION BUTTON -->
             <div id="delete-account-container" class="hidden border-t border-slate-300 pt-3 mt-2 no-export">
-                <button id="btn-delete-account" class="w-full py-2 bg-rose-600 text-white font-bold text-xs rounded sketched-border hover:bg-rose-700 transition-colors">🗑 Rip Out Account (Delete Permanently)</button>
+                <button id="btn-delete-account" class="w-full py-2 bg-rose-600 text-white font-bold text-xs rounded sketched-border hover:bg-rose-700 transition-colors">🗑️ Rip Out Account (Delete Permanently)</button>
             </div>
-
             <div class="border-t border-slate-300 pt-2 mt-1">
                 <span class="text-xs font-bold text-slate-500 uppercase">Posts & Notes</span>
                 <div id="profile-posts-list" class="flex flex-col gap-2 mt-2"></div>
             </div>
         </div>
     </div>
-
     <!-- MODAL: IN-APP LINK PREVIEW -->
     <div id="link-preview-modal" class="hidden fixed inset-0 bg-slate-900/70 z-50 flex items-center justify-center p-3">
         <div class="w-full max-w-xl bg-amber-50 p-4 sketched-border flex flex-col gap-3 relative h-[80vh] shadow-2xl">
             <div class="flex justify-between items-center border-b border-slate-300 pb-2">
                 <span class="font-['Permanent_Marker'] text-xl text-amber-900 truncate pr-2" id="link-preview-title">In-App Web Viewer</span>
-                <button id="link-preview-close" class="text-xl font-bold hover:scale-125">✖</button>
+                <button id="link-preview-close" class="text-xl font-bold hover:scale-125">✕</button>
             </div>
-            
+                         
             <div class="flex-1 w-full bg-white rounded sketched-border overflow-hidden relative">
                 <iframe id="link-preview-iframe" class="w-full h-full border-0"></iframe>
             </div>
-
             <div class="flex justify-between items-center text-xs border-t border-slate-300 pt-2">
                 <span id="link-preview-url-text" class="text-slate-500 font-bold truncate max-w-[60%]"></span>
                 <a id="link-preview-external-btn" href="#" target="_blank" class="bg-indigo-500 text-white font-bold px-3 py-1.5 rounded sketched-border hover:bg-indigo-600">Open Externally ↗</a>
             </div>
         </div>
     </div>
-
     <!-- MODAL: DOODLE SKETCH PAD -->
     <div id="doodle-modal" class="hidden fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
         <div class="w-full max-w-sm bg-amber-50 p-4 sketched-border flex flex-col gap-3 relative shadow-2xl">
             <div class="flex justify-between items-center border-b pb-2">
                 <span class="font-['Permanent_Marker'] text-xl text-slate-800">🎨 Sketch Canvas</span>
-                <button id="doodle-close" class="text-xl font-bold hover:scale-125">✖</button>
+                <button id="doodle-close" class="text-xl font-bold hover:scale-125">✕</button>
             </div>
-
             <canvas id="doodle-canvas" width="300" height="200" class="bg-white sketched-border cursor-crosshair mx-auto touch-none"></canvas>
-
             <div class="flex justify-between items-center">
                 <button id="btn-clear-doodle" class="text-xs font-bold bg-rose-200 text-rose-800 px-3 py-1.5 rounded sketched-border">Clear</button>
                 <button id="btn-attach-doodle" class="text-xs font-bold bg-indigo-500 text-white px-4 py-1.5 rounded sketched-border hover:bg-indigo-600">Attach Sketch</button>
             </div>
         </div>
     </div>
-
     <!-- MODAL: EMOJI PICKER -->
     <div id="emoji-modal" class="hidden fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
         <div class="w-full max-w-xs bg-amber-50 p-4 sketched-border flex flex-col gap-3 relative max-h-[80vh] shadow-2xl">
             <div class="flex justify-between items-center border-b pb-2">
                 <span class="font-['Permanent_Marker'] text-xl text-slate-800">Pick Avatar Emoji</span>
-                <button id="emoji-close" class="text-xl font-bold hover:scale-125">✖</button>
+                <button id="emoji-close" class="text-xl font-bold hover:scale-125">✕</button>
             </div>
-
             <div id="emoji-grid" class="grid grid-cols-5 gap-2 overflow-y-auto max-h-48 p-1 text-2xl text-center"></div>
-
             <div class="border-t pt-2 flex gap-1">
                 <input type="text" id="custom-emoji-input" placeholder="Or paste single emoji..." class="flex-1 p-1 bg-white text-sm sketched-border-alt outline-none">
                 <button id="btn-save-custom-emoji" class="text-xs font-bold bg-indigo-500 text-white px-2 py-1 rounded sketched-border">Set</button>
             </div>
         </div>
     </div>
-
     <!-- MODAL: SETTINGS -->
     <div id="settings-modal" class="hidden fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
         <div class="w-full max-w-sm bg-amber-50 p-5 sketched-border flex flex-col gap-4 relative shadow-2xl">
             <div class="flex justify-between items-center border-b pb-2">
                 <span class="font-['Permanent_Marker'] text-2xl text-slate-800">⚙️ Notebook Settings</span>
-                <button id="settings-close" class="text-xl font-bold hover:scale-125">✖</button>
+                <button id="settings-close" class="text-xl font-bold hover:scale-125">✕</button>
             </div>
-
             <div class="flex flex-col gap-3 text-sm font-bold text-slate-700">
                 <label class="flex justify-between items-center cursor-pointer">
                     <span>Lift Chat Input Box</span>
@@ -370,14 +325,9 @@
                     <span>Notify for Post Likes</span>
                     <input type="checkbox" id="setting-like-toast" class="w-4 h-4">
                 </label>
-
                 <label class="flex justify-between items-center cursor-pointer">
                     <span>Force In-App Toasts</span>
                     <input type="checkbox" id="setting-force-toast" class="w-4 h-4">
-                </label>
-                <label class="flex justify-between items-center cursor-pointer">
-                    <span>Enable DM Notifications</span>
-                    <input type="checkbox" id="setting-dm-toast" class="w-4 h-4">
                 </label>
                 <label class="flex justify-between items-center cursor-pointer">
                     <span>Writing Sound Effects</span>
@@ -389,15 +339,13 @@
                 </label>
                 <div class="border-t border-slate-300 pt-3 mt-2">
                     <label class="text-xs font-bold text-slate-500 uppercase block mb-1">Android Application</label>
-                    
+                                        
                     <!-- Direct hyperlink approach with download attribute -->
-                    <a href="./downloads/pensup-v1.0.apk" download="PensUp.apk" 
-                       class="w-full py-2 bg-indigo-600 text-white font-bold text-sm rounded sketched-border hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 no-underline text-center">
-                        <span>🤖</span> Download PensUp APK
+                    <a href="./downloads/pensup-v1.0.apk" download="PensUp.apk"
+                        class="w-full py-2 bg-indigo-600 text-white font-bold text-sm rounded sketched-border hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 no-underline text-center">
+                        <span>📱</span> Download PensUp APK
                     </a>
                 </div>
-
-
                 <div class="border-t border-slate-300 pt-2 flex justify-between items-center">
                     <span>Theme:</span>
                     <select id="theme-selector" class="p-1 bg-white border border-slate-300 rounded text-xs">
@@ -409,36 +357,30 @@
                     </select>
                 </div>
             </div>
-
             <button id="btn-save-settings" class="w-full py-2 bg-indigo-500 text-white font-bold rounded sketched-border hover:bg-indigo-600">Save & Close</button>
         </div>
     </div>
-
     <!-- MODAL: MAILBOX DIRECTORY -->
     <div id="dm-directory-modal" class="hidden fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
         <div class="w-full max-w-md bg-amber-50 p-4 sketched-border flex flex-col gap-3 relative max-h-[85vh] shadow-2xl">
             <div class="flex justify-between items-center border-b pb-2">
-                <span class="font-['Permanent_Marker'] text-2xl text-slate-800">📫 Mailbox Directory</span>
-                <button id="dm-directory-close" class="text-xl font-bold hover:scale-125">✖</button>
+                <span class="font-['Permanent_Marker'] text-2xl text-slate-800">✉️ Mailbox Directory</span>
+                <button id="dm-directory-close" class="text-xl font-bold hover:scale-125">✕</button>
             </div>
-
             <div class="flex gap-1">
                 <button id="dm-tab-all" class="flex-1 py-1.5 px-3 font-bold text-sm bg-indigo-500 text-white sketched-border transition-colors">All Members</button>
                 <button id="dm-tab-following" class="flex-1 py-1.5 px-3 font-bold text-sm bg-white text-slate-700 sketched-border hover:bg-amber-100 transition-colors">⭐ Following (<span id="dm-following-tab-count">0</span>)</button>
             </div>
-
             <input type="text" id="dm-search-input" placeholder="Search notebook members..." class="p-2 bg-white sketched-border-alt text-sm font-semibold outline-none">
-
             <div id="dm-user-list" class="flex-1 overflow-y-auto flex flex-col gap-2 max-h-64 pr-1"></div>
         </div>
     </div>
-
     <!-- MODAL: DM CHAT -->
     <div id="dm-chat-modal" class="hidden fixed inset-0 bg-amber-50 z-50 flex flex-col h-full">
         <header class="bg-blue-100 border-b-2 border-slate-800 p-2.5 flex items-center justify-between shadow-xs">
             <div class="flex items-center gap-2 overflow-hidden cursor-pointer" id="dm-header-user-info">
-                <button id="btn-close-dm-chat" class="bg-white p-1.5 rounded sketched-border font-bold text-sm shrink-0">◀ Back</button>
-                <span id="dm-header-avatar" class="text-2xl bg-amber-50 p-1 rounded-full sketched-border shrink-0">👤</span>
+                <button id="btn-close-dm-chat" class="bg-white p-1.5 rounded sketched-border font-bold text-sm shrink-0">⬅️ Back</button>
+                <span id="dm-header-avatar" class="text-2xl bg-amber-50 p-1 rounded-full sketched-border shrink-0">😀</span>
                 <div class="flex flex-col min-w-0">
                     <div class="flex items-center gap-1">
                         <span id="dm-chat-title" class="font-['Permanent_Marker'] text-xl text-slate-800 truncate">@user</span>
@@ -449,30 +391,24 @@
             </div>
             <button id="dm-header-profile-btn" class="bg-amber-200 text-amber-900 text-xs font-bold px-2.5 py-1.5 rounded sketched-border">Profile</button>
         </header>
-
         <div id="dm-messages-container" class="flex-1 overflow-y-auto p-4 flex flex-col gap-3"></div>
-
         <footer id="dm-chat-footer" class="p-2.5 bg-blue-50 border-t-2 border-slate-800 flex gap-2 items-center shrink-0">
             <textarea id="dm-message-input" rows="1" placeholder="Scribble a private letter..." class="flex-1 p-2 bg-white sketched-border outline-none font-semibold text-slate-800 resize-none max-h-32"></textarea>
             <button id="btn-send-dm" disabled class="bg-blue-500 text-white font-bold px-4 py-2 rounded sketched-border disabled:opacity-50 hover:bg-blue-600 transition-colors">Send</button>
         </footer>
     </div>
-
     <!-- MODAL: ARCADE PUZZLE CREATOR -->
     <div id="puzzle-modal" class="hidden fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
         <div class="w-full max-w-lg bg-amber-50 p-4 sketched-border flex flex-col gap-3 relative shadow-2xl">
             <div class="flex justify-between items-center border-b pb-2">
                 <span class="font-['Permanent_Marker'] text-xl text-slate-800">🕹️ Create Arcade Snippet</span>
-                <button id="puzzle-close" class="text-xl font-bold hover:scale-125">✖</button>
+                <button id="puzzle-close" class="text-xl font-bold hover:scale-125">✕</button>
             </div>
-
             <input type="text" id="puzzle-title-input" placeholder="Game / Snippet Title" class="p-2 bg-white sketched-border-alt text-sm font-semibold outline-none">
             <textarea id="puzzle-code-input" rows="8" placeholder="Paste single-file HTML/JS game snippet code..." class="p-2 bg-slate-900 text-emerald-400 font-mono text-xs rounded sketched-border outline-none resize-none"></textarea>
-
             <button id="btn-save-puzzle" class="w-full py-2 bg-emerald-500 text-white font-bold rounded sketched-border hover:bg-emerald-600">Publish Snippet</button>
         </div>
     </div>
-
     <script type="module" src="app.js"></script>
 </body>
 </html>
