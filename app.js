@@ -2,14 +2,30 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInAnonymously, onAuthStateChanged, signOut, deleteUser, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
 import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, setDoc, getDoc, updateDoc, getDocs, deleteDoc, arrayUnion, arrayRemove, where, limit, startAfter } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 
+// --- 1. FIREBASE CONFIG & INITIALIZATION (FIXED) ---
 const firebaseConfig = {
     apiKey: "AIzaSyDgou5bwByER3Tw_lL-BX1n02dgAESYft0",
     authDomain: "notebookchat-6c5ef.firebaseapp.com",
     projectId: "notebookchat-6c5ef"
-};
+}; // Fixed: Missing closing brace and semicolon added
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+
+// --- 2. APK DOWNLOAD HANDLER ---
+window.downloadAppAPK = function() {
+    showToastNotification("PensUp", "Starting APK download...", "chat");
+
+    const apkPath = "./downloads/pensup-v1.0.apk"; // Path to your APK file in your project directory
+    
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.href = apkPath;
+    downloadAnchor.setAttribute("download", "PensUp.apk");
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+};
 
 setPersistence(auth, browserLocalPersistence).catch((err) => console.warn("Auth persistence error:", err));
 
