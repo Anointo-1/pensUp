@@ -5,6 +5,27 @@
     --text-color: #334155;
 }
 
+.theme-default {
+    --paper-bg: #fdfaf6;
+    --line-color: rgba(148, 163, 184, 0.4);
+    --margin-color: rgba(251, 113, 133, 0.7);
+    --text-color: #334155;
+}
+
+.theme-dark {
+    --paper-bg: #0f172a;
+    --line-color: rgba(148, 163, 184, 0.1);
+    --margin-color: rgba(148, 163, 184, 0.5);
+    --text-color: #e2e8f0;
+}
+
+.theme-sepia {
+    --paper-bg: #fbf0d9;
+    --line-color: rgba(180, 130, 80, 0.3);
+    --margin-color: rgba(200, 70, 70, 0.7);
+    --text-color: #432818;
+}
+
 .theme-halloween {
     --paper-bg: #1e1b4b;
     --line-color: rgba(249, 115, 22, 0.2);
@@ -17,13 +38,6 @@
     --line-color: rgba(34, 197, 94, 0.3);
     --margin-color: rgba(220, 38, 38, 0.7);
     --text-color: #14532d;
-}
-
-.theme-dark {
-    --paper-bg: #0f172a;
-    --line-color: rgba(148, 163, 184, 0.1);
-    --margin-color: rgba(148, 163, 184, 0.5);
-    --text-color: #e2e8f0;
 }
 
 .theme-ocean {
@@ -56,7 +70,7 @@ body {
         repeating-linear-gradient(transparent, transparent 31px, var(--line-color) 31px, var(--line-color) 32px);
     background-size: 100% 100%, 100% 32px;
     background-repeat: repeat, repeat;
-    transition: all 0.5s ease;
+    transition: background-color 0.3s ease, color 0.3s ease;
     -ms-overflow-style: none;
     scrollbar-width: none;
 }
@@ -79,7 +93,7 @@ body::-webkit-scrollbar {
 
 .paper-mask {
     background-color: var(--paper-bg);
-    transition: background-color 0.5s ease;
+    transition: background-color 0.3s ease;
 }
 
 @keyframes popIn {

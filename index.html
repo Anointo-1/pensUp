@@ -22,24 +22,16 @@
     <meta id="tw-title" name="twitter:title" content="PensUp Pro – Handwritten Notebook & Study Group">
     <meta id="tw-description" name="twitter:description" content="A handwritten notebook-style real-time study group, chat, and interactive arcade application.">
     <meta name="twitter:card" content="summary_large_image">
-    <!-- Google Search Console Structured Data -->
+    <!-- Google Search Console & Sitelinks Structured Data -->
     <script type="application/ld+json">
     {
         "@context": "https://schema.org",
-        "@type": "DiscussionForumPosting",
-        "headline": "PensUp Pro – Handwritten Notebook & Study Group",
-        "text": "A handwritten notebook-style real-time study group, chat, and interactive arcade application.",
-        "datePublished": "2026-02-01T00:00:00Z",
+        "@type": "WebSite",
         "url": "https://anointo-1.github.io/pensUp/",
-        "author": {
-            "@type": "Person",
-            "name": "Anointo",
-            "url": "https://anointo-1.github.io/pensUp/"
-        },
-        "publisher": {
-            "@type": "Organization",
-            "name": "PensUp Team",
-            "url": "https://anointo-1.github.io/pensUp/"
+        "potentialAction": {
+            "@type": "SearchAction",
+            "target": "https://anointo-1.github.io/pensUp/?q={search_term_string}",
+            "query-input": "required name=search_term_string"
         }
     }
     </script>
@@ -51,9 +43,12 @@
 </head>
 <body class="h-screen w-full flex flex-col relative overflow-hidden text-lg select-none theme-default">
     <!-- Loading Overlay -->
-    <div id="auth-loading" class="fixed inset-0 bg-amber-50/90 z-50 flex flex-col items-center justify-center gap-3">
+    <div id="auth-loading" class="fixed inset-0 bg-amber-50/95 z-50 flex flex-col items-center justify-center gap-3">
         <div class="text-4xl animate-spin">⏳</div>
-        <div class="font-['Permanent_Marker'] text-2xl text-amber-900">Opening Notebook...</div>
+        <div id="auth-loading-text" class="font-['Permanent_Marker'] text-2xl text-amber-900">Opening Notebook...</div>
+        <div id="offline-error-banner" class="hidden mt-4 p-3 bg-rose-100 text-rose-800 sketched-border text-center max-w-xs text-sm font-bold">
+            ⚠️ Network unavailable. Please check your connection or try opening when online.
+        </div>
     </div>
     <!-- Credit Mode Alert Banner -->
     <div id="credit-mode-banner" class="hidden bg-amber-500 text-slate-950 text-xs font-bold px-3 py-1.5 text-center border-b-2 border-slate-800 z-50 flex justify-between items-center shadow-md">
@@ -113,7 +108,7 @@
         <header class="bg-amber-100 border-b-2 border-slate-800 p-2.5 flex items-center justify-between shadow-xs z-20 shrink-0">
             <div class="flex items-center gap-2">
                 <button id="btn-back-launch" class="bg-white p-1.5 rounded sketched-border hover:bg-amber-200 font-bold text-sm">⬅️ Back</button>
-                <span id="user-badge" class="font-['Permanent_Marker'] text-xl text-slate-800 cursor-pointer hover:opacity-80">My Profile</span>
+                <button id="user-badge" class="font-['Permanent_Marker'] text-lg text-slate-800 bg-amber-200 px-3 py-1 rounded sketched-border hover:bg-amber-300 transition-colors cursor-pointer shadow-xs flex items-center gap-1">👤 My Profile</button>
             </div>
             <div class="flex items-center gap-2">
                 <span id="online-counter-badge" class="text-xs font-bold bg-emerald-100 text-emerald-800 px-2 py-1 rounded sketched-border-alt">🟢 1 online</span>
@@ -147,7 +142,7 @@
                 </div>
                                 
                 <footer id="chat-footer" class="p-2.5 bg-amber-100 border-t-2 border-slate-800 flex gap-2 items-center shrink-0">
-                    <textarea id="message-input" rows="1" placeholder="Scribble a note... (use #tags!)" class="flex-1 p-2 bg-white sketched-border outline-none font-semibold text-slate-800 resize-none max-h-32"></textarea>
+                    <textarea id="message-input" rows="1" placeholder="Scribble a note... (use #tags! Ctrl+Enter to send)" class="flex-1 p-2 bg-white sketched-border outline-none font-semibold text-slate-800 resize-none max-h-32"></textarea>
                     <button id="btn-send" disabled class="bg-indigo-500 text-white font-bold px-4 py-2 rounded sketched-border disabled:opacity-50 hover:bg-indigo-600 transition-colors">Send</button>
                 </footer>
             </section>
@@ -188,7 +183,7 @@
                 </div>
                 <div id="arcade-list" class="h-32 shrink-0 overflow-x-auto flex gap-2 py-1"></div>
             </section>
-            <!-- VIEW: STICKY BOARD -->
+            <!-- VIEW: STICKY BOARD (HORIZONTAL) -->
             <section id="view-sticky" class="hidden flex-1 flex flex-col h-full p-3 overflow-hidden gap-3">
                 <div id="sticky-creator-box" class="bg-white p-3 sketched-border flex flex-col gap-2 shrink-0">
                     <input type="text" id="sticky-input" placeholder="Pin a sticky note..." class="p-2 bg-yellow-50/50 sketched-border-alt text-sm font-semibold outline-none">
@@ -202,7 +197,7 @@
                         <button id="btn-publish-sticky" class="bg-indigo-500 text-white text-xs font-bold px-3 py-1.5 rounded sketched-border hover:bg-indigo-600">Pin Note 📌</button>
                     </div>
                 </div>
-                <div id="sticky-board-grid" class="flex-1 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 gap-3 p-1"></div>
+                <div id="sticky-board-grid" class="flex-1 overflow-x-auto flex flex-row gap-4 p-2 items-center"></div>
             </section>
         </main>
     </div>
@@ -339,9 +334,7 @@
                 </label>
                 <div class="border-t border-slate-300 pt-3 mt-2">
                     <label class="text-xs font-bold text-slate-500 uppercase block mb-1">Android Application</label>
-                                        
-                    <!-- Direct hyperlink approach with download attribute -->
-                    <a href="pensup-v1.0.apk" download="PensUp.apk"
+                    <a href="./downloads/pensup-v1.0.apk" download="PensUp.apk"
                         class="w-full py-2 bg-indigo-600 text-white font-bold text-sm rounded sketched-border hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 no-underline text-center">
                         <span>📱</span> Download PensUp APK
                     </a>
@@ -354,6 +347,9 @@
                         <option value="theme-sepia">Vintage Sepia</option>
                         <option value="theme-halloween">Spooky Halloween</option>
                         <option value="theme-xmas">Holiday Festivity</option>
+                        <option value="theme-ocean">Ocean Breeze</option>
+                        <option value="theme-spring">Spring Blossom</option>
+                        <option value="theme-sunset">Sunset Glow</option>
                     </select>
                 </div>
             </div>
@@ -393,7 +389,7 @@
         </header>
         <div id="dm-messages-container" class="flex-1 overflow-y-auto p-4 flex flex-col gap-3"></div>
         <footer id="dm-chat-footer" class="p-2.5 bg-blue-50 border-t-2 border-slate-800 flex gap-2 items-center shrink-0">
-            <textarea id="dm-message-input" rows="1" placeholder="Scribble a private letter..." class="flex-1 p-2 bg-white sketched-border outline-none font-semibold text-slate-800 resize-none max-h-32"></textarea>
+            <textarea id="dm-message-input" rows="1" placeholder="Scribble a private letter... (Ctrl+Enter to send)" class="flex-1 p-2 bg-white sketched-border outline-none font-semibold text-slate-800 resize-none max-h-32"></textarea>
             <button id="btn-send-dm" disabled class="bg-blue-500 text-white font-bold px-4 py-2 rounded sketched-border disabled:opacity-50 hover:bg-blue-600 transition-colors">Send</button>
         </footer>
     </div>

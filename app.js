@@ -2,7 +2,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInAnonymously, onAuthStateChanged, signOut, deleteUser, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
 import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, setDoc, getDoc, updateDoc, getDocs, deleteDoc, arrayUnion, arrayRemove, where, limit, startAfter } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 
-// --- 1. FIREBASE CONFIG & INITIALIZATION (FIXED) ---
+// --- 1. FIREBASE CONFIG & INITIALIZATION ---
 const firebaseConfig = {
     apiKey: "AIzaSyDgou5bwByER3Tw_lL-BX1n02dgAESYft0",
     authDomain: "notebookchat-6c5ef.firebaseapp.com",
@@ -16,7 +16,7 @@ const db = getFirestore(app);
 // --- 2. APK DOWNLOAD HANDLER ---
 window.downloadAppAPK = function() {
     showToastNotification("PensUp", "Starting APK download...", "chat");
-    const apkPath = "pensup-v1.0.apk";
+    const apkPath = "./downloads/pensup-v1.0.apk";
          
     const downloadAnchor = document.createElement('a');
     downloadAnchor.href = apkPath;
@@ -30,7 +30,7 @@ setPersistence(auth, browserLocalPersistence).catch((err) => console.warn("Auth 
 
 let currentUser = null, userProfile = null;
 let userDocUnsub = null, unsubMsg = null, unsubDmMsg = null, unsubProfilePosts = null, unsubNotifs = null, unsubFeed = null, unsubPuzzles = null, unsubSticky = null, unsubPresence = null;
-let isRegistering = false, isInitialLoadDone = false;
+let isRegistering = false, isInitialLoadDone = false, isLoggingOut = false;
 
 let currentPinnedCount = 0;
 let linksEnabledGlobally = true;
@@ -43,7 +43,17 @@ let oldestMessageDoc = null;
 let lastVisibleFeedDoc = null;
 const ROOM_ID = "main-room";
 const SUPER_ADMINS = ['anoimazo1', 'anointo', 'amazo'];
-const ALL_EMOJIS = ['😀', '😎', '📚', '✏️', '💻', '🚀', '⭐', '🔥', '🎨', '🧠', '⚡', '☕', '🐱', '🦊', '🐼', '🏆', '🎵', '💡', '📌', '🔍'];
+
+// Original Complete Emoji Array
+const ALL_EMOJIS = [
+    '😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '🙃',
+    '😉', '😊', '😇', '🥰', '😍', '🤩', '😘', '😗', '😚', '😙',
+    '😋', '😛', '😜', '🤪', '😝', '🤑', '🤗', '🤭', '🤫', '🤔',
+    '😎', '🤓', '🧐', '😕', '😟', '🙁', '😮', '😯', '😲', '😳',
+    '🥺', '😦', '😧', '😨', '😰', '😥', '😢', '😭', '😱', '😖',
+    '📚', '✏️', '💻', '🚀', '⭐', '🔥', '🎨', '🧠', '⚡', '☕',
+    '🐱', '🦊', '🐼', '🏆', '🎵', '💡', '📌', '🔍', '👑', '🎯'
+];
 
 const UI = {
     auth: document.getElementById('auth-screen'),
@@ -69,8 +79,15 @@ let settings = {
     followToast: localStorage.getItem('pensup_follow_toast') !== 'false',
     likeToast: localStorage.getItem('pensup_like_toast') !== 'false',
     soundEnabled: localStorage.getItem('pensup_sound') !== 'false',
-    fullScreen: localStorage.getItem('pensup_fullscreen') === 'true'
+    fullScreen: localStorage.getItem('pensup_fullscreen') === 'true',
+    theme: localStorage.getItem('pensup_theme') || 'theme-default'
 };
+
+// Apply saved theme on startup
+if (settings.theme) {
+    document.body.className = `h-screen w-full flex flex-col relative overflow-hidden text-lg select-none ${settings.theme}`;
+    if (UI.themeSel) UI.themeSel.value = settings.theme;
+}
 
 function triggerQuotaWarning() {
     const banner = document.getElementById('credit-mode-banner');
@@ -95,6 +112,33 @@ function applySettings() {
         if (document.exitFullscreen && document.fullscreenElement) document.exitFullscreen().catch(e => {});
     }
 }
+
+// Offline & Startup Safety Timeout (Prevents APK infinite hang on network failure)
+const startupTimeout = setTimeout(() => {
+    const authLoading = document.getElementById('auth-loading');
+    if (authLoading && !authLoading.classList.contains('hidden') && !currentUser) {
+        authLoading.querySelector('#auth-loading-text').textContent = "Offline Mode / Loading Failed";
+        document.getElementById('offline-error-banner').classList.remove('hidden');
+        setTimeout(() => {
+            authLoading.classList.add('hidden');
+        }, 3000);
+    }
+}, 6000);
+
+// Online / Offline Toast Notifier
+window.addEventListener('online', async () => {
+    if (currentUser) {
+        await updateDoc(doc(db, "users", currentUser.uid), { isOnline: true, lastActive: serverTimestamp() }).catch(() => {});
+    }
+    showToastNotification("System", "🟢 Back online! Notebook synced.", "chat");
+});
+
+window.addEventListener('offline', async () => {
+    if (currentUser) {
+        await updateDoc(doc(db, "users", currentUser.uid), { isOnline: false }).catch(() => {});
+    }
+    showToastNotification("System", "🔴 You are offline. Changes will save locally.", "chat");
+});
 
 function createToastContainer() {
     let container = document.getElementById('toast-container');
@@ -214,9 +258,16 @@ const setTimeGreeting = () => {
     document.getElementById('greeting-text').textContent = hr < 12 ? 'Good Morning!' : hr < 18 ? 'Good Afternoon!' : 'Good Evening!';
 };
 
-UI.themeSel.onchange = (e) => document.body.className = `h-screen w-full flex flex-col relative overflow-hidden text-lg select-none ${e.target.value}`;
+// Theme Selector Handler
+UI.themeSel.onchange = (e) => {
+    const selectedTheme = e.target.value;
+    settings.theme = selectedTheme;
+    localStorage.setItem('pensup_theme', selectedTheme);
+    document.body.className = `h-screen w-full flex flex-col relative overflow-hidden text-lg select-none ${selectedTheme}`;
+};
 
 document.getElementById('btn-guest').onclick = async () => {
+    document.getElementById('auth-loading-text').textContent = "Entering as Guest...";
     document.getElementById('auth-loading').classList.remove('hidden');
     try {
         const cred = await signInAnonymously(auth);
@@ -234,6 +285,7 @@ document.getElementById('btn-register').onclick = async () => {
     const u = document.getElementById('auth-username').value.trim().toLowerCase().replace(/\s+/g, '');
     const p = document.getElementById('auth-password').value;
     if (u.length < 3 || p.length < 6) return showError("Username min 3 chars, password min 6 chars.");
+    document.getElementById('auth-loading-text').textContent = "Registering Account...";
     document.getElementById('auth-loading').classList.remove('hidden');
     isRegistering = true;
      
@@ -253,13 +305,19 @@ document.getElementById('btn-login').onclick = async () => {
     const u = document.getElementById('auth-username').value.trim().toLowerCase();
     const p = document.getElementById('auth-password').value;
     if(!u || !p) return showError("Please enter credentials.");
-    document.getElementById('auth-loading').classList.add('hidden');
+    document.getElementById('auth-loading-text').textContent = "Logging In...";
+    document.getElementById('auth-loading').classList.remove('hidden');
     try { await signInWithEmailAndPassword(auth, `${u}@notebook.local`, p); } 
     catch (e) { document.getElementById('auth-loading').classList.add('hidden'); showError("Invalid username or password."); }
 };
 
+// Logout with Loading Screen and Guard Flag against Spam-clicks
 document.getElementById('btn-logout-launch').onclick = async () => {
-    document.getElementById('auth-loading').classList.add('hidden');
+    if (isLoggingOut) return;
+    isLoggingOut = true;
+    document.getElementById('auth-loading-text').textContent = "Packing Notebook & Logging Out...";
+    document.getElementById('auth-loading').classList.remove('hidden');
+    
     if (currentUser) {
         await updateDoc(doc(db, "users", currentUser.uid), { isOnline: false }).catch(() => {});
     }
@@ -269,21 +327,26 @@ document.getElementById('btn-logout-launch').onclick = async () => {
     if (userDocUnsub) { userDocUnsub(); userDocUnsub = null; }
     currentUser = null; userProfile = null;
     try { await signOut(auth); } catch (e) {}
+    setTimeout(() => {
+        isLoggingOut = false;
+        document.getElementById('auth-loading').classList.add('hidden');
+    }, 800);
 };
 
-// --- ONLINE / OFFLINE & PRESENCE LISTENER ---
-window.addEventListener('online', async () => {
-    if (currentUser) {
-        await updateDoc(doc(db, "users", currentUser.uid), { isOnline: true, lastActive: serverTimestamp() }).catch(() => {});
+// PC Keybinds Support (Ctrl + Enter to send, Esc to close modals)
+window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        document.querySelectorAll('.fixed:not(.hidden)').forEach(m => {
+            if (m.id !== 'auth-loading') m.classList.add('hidden');
+        });
     }
-    showToastNotification("System", "Back online! Syncing notebook...", "chat");
-});
-
-window.addEventListener('offline', async () => {
-    if (currentUser) {
-        await updateDoc(doc(db, "users", currentUser.uid), { isOnline: false }).catch(() => {});
+    if (e.ctrlKey && e.key === 'Enter') {
+        if (!document.getElementById('view-chat').classList.contains('hidden') && !UI.sendBtn.disabled) {
+            UI.sendBtn.click();
+        } else if (!document.getElementById('dm-chat-modal').classList.contains('hidden') && !dmSendBtn.disabled) {
+            dmSendBtn.click();
+        }
     }
-    showToastNotification("System", "You are offline. Changes will sync when reconnected.", "chat");
 });
 
 function startPresenceHeartbeat(uid) {
@@ -322,7 +385,6 @@ async function handleUrlRouting() {
         try {
             const postSnap = await getDoc(doc(db, "global_posts", postId));
             if (postSnap.exists()) {
-                const data = postSnap.data();
                 switchView('feed');
                 loadGlobalFeed(postId);
             }
@@ -342,6 +404,7 @@ async function handleUrlRouting() {
 }
 
 function syncUserProfile(user) {
+    clearTimeout(startupTimeout);
     if (userDocUnsub) { userDocUnsub(); userDocUnsub = null; }
     userDocUnsub = onSnapshot(doc(db, "users", user.uid), 
         (docSnap) => {
@@ -367,7 +430,6 @@ function syncUserProfile(user) {
             document.getElementById('launch-username').textContent = userProfile.username;
             document.getElementById('btn-open-emoji-picker').textContent = userProfile.emoji || '😀';
             document.getElementById('launch-bio').value = userProfile.bio || '';
-            document.getElementById('user-badge').textContent = `${userProfile.emoji || '😀'} My Profile`;
                          
             if (userProfile.role === 'guest') {
                 document.getElementById('launch-bio').disabled = true;
@@ -575,7 +637,6 @@ function loadMessages() {
             isInitialLoadDone = true;
         }, (error) => { 
             triggerQuotaWarning();
-            console.warn("Chat quota note:", error); 
         }
     );
 }
@@ -1190,10 +1251,10 @@ function loadStickyNotes() {
     if (unsubSticky) unsubSticky();
     const grid = document.getElementById('sticky-board-grid');
     if(!grid) return;
-    grid.innerHTML = '<div class="text-center italic text-slate-500 col-span-full">Pinning sticky notes...</div>';
-    unsubSticky = onSnapshot(query(collection(db, "sticky_board"), orderBy("createdAt", "desc"), limit(10)), (snapshot) => {
+    grid.innerHTML = '<div class="text-center italic text-slate-500 min-w-full">Pinning horizontal sticky notes...</div>';
+    unsubSticky = onSnapshot(query(collection(db, "sticky_board"), orderBy("createdAt", "desc"), limit(15)), (snapshot) => {
         grid.innerHTML = '';
-        if (snapshot.empty) { grid.innerHTML = '<div class="text-center italic text-slate-500 col-span-full">No sticky notes yet.</div>'; return; }
+        if (snapshot.empty) { grid.innerHTML = '<div class="text-center italic text-slate-500 min-w-full">No sticky notes yet.</div>'; return; }
         const colorClasses = {
             yellow: 'bg-yellow-100 text-amber-950 border-amber-300', pink: 'bg-pink-100 text-rose-950 border-pink-300',
             blue: 'bg-blue-100 text-blue-950 border-blue-300', green: 'bg-emerald-100 text-emerald-950 border-emerald-300'
@@ -1203,13 +1264,13 @@ function loadStickyNotes() {
             const colorClass = colorClasses[note.color] || colorClasses.yellow;
             const canDelete = currentUser && (note.authorId === currentUser.uid || ['super_admin', 'admin'].includes(userProfile?.role));
             const div = document.createElement('div');
-            div.className = `${colorClass} p-3.5 sketched-border flex flex-col justify-between gap-3 relative shadow-md rotate-[-1deg] min-h-[130px]`;
+            div.className = `${colorClass} p-3.5 sketched-border flex flex-col justify-between gap-3 relative shadow-md rotate-[-1deg] w-64 h-48 shrink-0`;
             const deleteBtn = canDelete ? `<button onclick="deleteStickyNote('${docSnap.id}')" class="text-rose-600 font-bold text-xs bg-white/60 rounded px-1.5 py-0.5">🗑️</button>` : '';
             div.innerHTML = `
                 <div class="absolute -top-3 left-1/2 -translate-x-1/2 text-xl">📌</div>
-                <div class="text-lg leading-snug break-words mt-1">${escapeHTML(note.text)}</div>
+                <div class="text-lg leading-snug break-words mt-1 overflow-y-auto max-h-28">${escapeHTML(note.text)}</div>
                 <div class="flex justify-between items-center text-xs border-t border-black/10 pt-2 mt-1">
-                    <span class="font-bold cursor-pointer" onclick="showProfile('${note.authorId}')">${escapeHTML(note.authorEmoji||'😀')} @${escapeHTML(note.authorName)}</span>
+                    <span class="font-bold cursor-pointer truncate max-w-[150px]" onclick="showProfile('${note.authorId}')">${escapeHTML(note.authorEmoji||'😀')} @${escapeHTML(note.authorName)}</span>
                     ${deleteBtn}
                 </div>
             `;
@@ -1371,6 +1432,13 @@ function openDmChat(targetUid, targetName, targetEmoji, targetBio) {
     activeDmTargetId = targetUid;
     loadDmMessages();
 }
+
+// Wire DM Header Profile Button
+document.getElementById('dm-header-profile-btn')?.addEventListener('click', () => {
+    if (activeDmTargetUser) {
+        showProfile(activeDmTargetUser.id);
+    }
+});
 
 document.getElementById('btn-close-dm-chat')?.addEventListener('click', () => {
     dmChatModal?.classList.add('hidden');
