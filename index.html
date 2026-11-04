@@ -37,29 +37,7 @@
             "@type": "SearchAction",
             "target": "https://anointo-1.github.io/pensUp/?q={search_term_string}",
             "query-input": "required name=search_term_string"
-        },
-        "hasPart": [
-            {
-                "@type": "WebPage",
-                "name": "Notebook Chat",
-                "url": "https://anointo-1.github.io/pensUp/?tab=chat"
-            },
-            {
-                "@type": "WebPage",
-                "name": "Global Feed",
-                "url": "https://anointo-1.github.io/pensUp/?tab=feed"
-            },
-            {
-                "@type": "WebPage",
-                "name": "Arcade Snippets",
-                "url": "https://anointo-1.github.io/pensUp/?tab=arcade"
-            },
-            {
-                "@type": "WebPage",
-                "name": "Settings",
-                "url": "https://anointo-1.github.io/pensUp/?action=settings"
-            }
-        ]
+        }
     }
     </script>
 
@@ -76,13 +54,13 @@
         <div class="text-4xl animate-bounce">✏️</div>
         <div id="auth-loading-text" class="font-['Permanent_Marker'] text-2xl text-amber-900">Opening Notebook...</div>
         <div id="offline-error-banner" class="hidden mt-4 p-3 bg-rose-100 text-rose-800 sketched-border text-center max-w-xs text-sm font-bold">
-            ⚠️ Network unavailable. Please check your connection or try opening when online.
+            ⚠️ Network unavailable or Firebase quota reached. Please check your connection.
         </div>
     </div>
 
     <!-- Credit Mode Alert Banner -->
     <div id="credit-mode-banner" class="hidden bg-amber-500 text-slate-950 text-xs font-bold px-3 py-1.5 text-center border-b-2 border-slate-800 z-50 flex justify-between items-center shadow-md">
-        <span>⚠️ High traffic detected! We're temporarily pacing requests to keep our free notebook running smoothly.</span>
+        <span>⚠️ High traffic or Firestore quota reached! We're pacing requests to keep running smoothly.</span>
         <button onclick="document.getElementById('credit-mode-banner').classList.add('hidden')" class="bg-amber-700 text-white px-2 py-0.5 rounded">Dismiss ✕</button>
     </div>
 
@@ -242,7 +220,7 @@
         </main>
     </div>
 
-    <!-- MODAL: PROFILE & POST CREATOR (z-[60] so it opens above DMs) -->
+    <!-- MODAL: PROFILE & POST CREATOR -->
     <div id="profile-modal" class="hidden fixed inset-0 bg-slate-900/60 z-[60] flex items-center justify-center p-4">
         <div id="profile-card-container" class="w-full max-w-md bg-amber-50 p-5 sketched-border flex flex-col gap-3 relative max-h-[90vh] overflow-y-auto shadow-2xl">
             <button id="profile-close" class="no-export absolute top-3 right-3 text-xl font-bold hover:scale-125">✕</button>
@@ -418,7 +396,7 @@
         </div>
     </div>
 
-    <!-- MODAL: DM CHAT (z-50) -->
+    <!-- MODAL: DM CHAT -->
     <div id="dm-chat-modal" class="hidden fixed inset-0 bg-amber-50/95 z-50 flex flex-col h-full">
         <header class="bg-blue-100 border-b-2 border-slate-800 p-2.5 flex items-center justify-between shadow-xs">
             <div class="flex items-center gap-2 overflow-hidden cursor-pointer" id="dm-header-user-info">
@@ -439,6 +417,17 @@
             <textarea id="dm-message-input" rows="1" placeholder="Scribble a private letter... (Ctrl+Enter to send)" class="flex-1 p-2 bg-white sketched-border outline-none font-semibold text-slate-800 resize-none max-h-32"></textarea>
             <button id="btn-send-dm" disabled class="bg-blue-500 text-white font-bold px-4 py-2 rounded sketched-border disabled:opacity-50 hover:bg-blue-600 transition-colors">Send</button>
         </footer>
+    </div>
+
+    <!-- MODAL: ADMIN PANEL (FIXED & RESTORED) -->
+    <div id="admin-modal" class="hidden fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
+        <div class="w-full max-w-md bg-amber-50 p-5 sketched-border flex flex-col gap-3 relative max-h-[85vh] shadow-2xl">
+            <div class="flex justify-between items-center border-b pb-2">
+                <span class="font-['Permanent_Marker'] text-2xl text-slate-800">🛡️ Admin Panel</span>
+                <button id="admin-close" class="text-xl font-bold hover:scale-125">✕</button>
+            </div>
+            <div id="admin-user-list" class="flex-1 overflow-y-auto flex flex-col gap-2 max-h-96 pr-1"></div>
+        </div>
     </div>
 
     <!-- MODAL: ARCADE PUZZLE CREATOR -->

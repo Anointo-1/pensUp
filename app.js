@@ -83,7 +83,6 @@ let settings = {
     theme: localStorage.getItem('pensup_theme') || 'theme-default'
 };
 
-// Apply theme dynamically
 if (settings.theme) {
     document.body.className = `h-screen w-full flex flex-col relative overflow-hidden text-lg select-none ${settings.theme}`;
     if (UI.themeSel) UI.themeSel.value = settings.theme;
@@ -113,7 +112,7 @@ function applySettings() {
     }
 }
 
-// Safety Startup Timeout
+// Startup timeout to handle slow/offline firebase connections gracefully
 const startupTimeout = setTimeout(() => {
     const authLoading = document.getElementById('auth-loading');
     if (authLoading && !authLoading.classList.contains('hidden') && !currentUser) {
@@ -125,7 +124,6 @@ const startupTimeout = setTimeout(() => {
     }
 }, 6000);
 
-// Online / Offline Notifiers
 window.addEventListener('online', async () => {
     if (currentUser) {
         await updateDoc(doc(db, "users", currentUser.uid), { isOnline: true, lastActive: serverTimestamp() }).catch(() => {});
@@ -231,12 +229,12 @@ const parseTagsAndLinks = (rawText) => {
     let safeText = escapeHTML(rawText);
     if (linksEnabledGlobally) {
         safeText = safeText.replace(/(https?:\/\/[^\s]+)/g, (match) => {
-            return `<span onclick="event.stopPropagation(); openInAppWebLink('${match}')" class="text-blue-600 underline font-semibold hover:text-blue-800 break-all cursor-pointer inline-block">${match}</span>`;
+            return `<span onclick="event.stopPropagation(); openInAppWebLink('${match}')" class="text-blue-600 underline font-semibold hover:text-blue-800 break-all cursor-pointer inline">${match}</span>`;
         });
     } else {
         safeText = safeText.replace(/(https?:\/\/[^\s]+)/g, '<span class="italic text-slate-400 bg-slate-100 px-1 rounded">[Link Disabled by Admin]</span>');
     }
-    safeText = safeText.replace(/#([a-zA-Z][\w\-]*)/g, '<span onclick="event.stopPropagation(); filterByTag(\'$1\')" class="text-indigo-600 font-bold bg-indigo-50 px-1.5 py-0.5 rounded sketched-border-alt cursor-pointer hover:bg-indigo-100">#$1</span>');
+    safeText = safeText.replace(/#([a-zA-Z][\w\-]*)/g, '<span onclick="event.stopPropagation(); filterByTag(\'$1\')" class="text-indigo-600 font-bold bg-indigo-50 px-1.5 py-0.5 rounded sketched-border-alt cursor-pointer hover:bg-indigo-100 inline">#$1</span>');
     return safeText;
 };
 
@@ -258,7 +256,6 @@ const setTimeGreeting = () => {
     document.getElementById('greeting-text').textContent = hr < 12 ? 'Good Morning!' : hr < 18 ? 'Good Afternoon!' : 'Good Evening!';
 };
 
-// Theme Selector Handler
 UI.themeSel.onchange = (e) => {
     const selectedTheme = e.target.value;
     settings.theme = selectedTheme;
@@ -311,29 +308,25 @@ document.getElementById('btn-login').onclick = async () => {
     catch (e) { document.getElementById('auth-loading').classList.add('hidden'); showError("Invalid username or password."); }
 };
 
-// Logout with Loading Screen and Guard Flag
+// Robust Logout with Loading Screen active until Auth resets
 document.getElementById('btn-logout-launch').onclick = async () => {
     if (isLoggingOut) return;
     isLoggingOut = true;
     document.getElementById('auth-loading-text').textContent = "Packing Notebook & Logging Out...";
     document.getElementById('auth-loading').classList.remove('hidden');
     
-    if (currentUser) {
-        await updateDoc(doc(db, "users", currentUser.uid), { isOnline: false }).catch(() => {});
-    }
-    if (presenceInterval) { clearInterval(presenceInterval); presenceInterval = null; }
-    if (unsubPresence) { unsubPresence(); unsubPresence = null; }
-    if (unsubNotifs) { unsubNotifs(); unsubNotifs = null; }
-    if (userDocUnsub) { userDocUnsub(); userDocUnsub = null; }
-    currentUser = null; userProfile = null;
-    try { await signOut(auth); } catch (e) {}
-    setTimeout(() => {
+    try {
+        if (currentUser) {
+            await updateDoc(doc(db, "users", currentUser.uid), { isOnline: false }).catch(() => {});
+        }
+        cleanupListeners();
+        await signOut(auth);
+    } catch (e) {
         isLoggingOut = false;
         document.getElementById('auth-loading').classList.add('hidden');
-    }, 800);
+    }
 };
 
-// Keybinds (Ctrl+Enter & Escape)
 window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
         document.querySelectorAll('.fixed:not(.hidden)').forEach(m => {
@@ -403,6 +396,17 @@ async function handleUrlRouting() {
     }
 }
 
+function cleanupListeners() {
+    if (presenceInterval) { clearInterval(presenceInterval); presenceInterval = null; }
+    if (unsubPresence) { unsubPresence(); unsubPresence = null; }
+    if (unsubNotifs) { unsubNotifs(); unsubNotifs = null; }
+    if (userDocUnsub) { userDocUnsub(); userDocUnsub = null; }
+    if (unsubMsg) { unsubMsg(); unsubMsg = null; }
+    if (unsubFeed) { unsubFeed(); unsubFeed = null; }
+    if (unsubSticky) { unsubSticky(); unsubSticky = null; }
+    if (unsubPuzzles) { unsubPuzzles(); unsubPuzzles = null; }
+}
+
 function syncUserProfile(user) {
     clearTimeout(startupTimeout);
     if (userDocUnsub) { userDocUnsub(); userDocUnsub = null; }
@@ -416,16 +420,14 @@ function syncUserProfile(user) {
                 showError(docSnap.data()?.suspended ? "Account suspended." : "Account missing."); 
                 return; 
             }
-            const wasNull = !currentUser;
             userProfile = docSnap.data();
-             
             if (!userProfile.following) userProfile.following = [];
             currentUser = user;
                          
             document.getElementById('auth-loading').classList.add('hidden');
             UI.auth.classList.add('hidden');
-             
-            if (wasNull && UI.app.classList.contains('hidden')) UI.launch.classList.remove('hidden');
+            UI.launch.classList.remove('hidden');
+            
             setTimeGreeting();
             document.getElementById('launch-username').textContent = userProfile.username;
             document.getElementById('btn-open-emoji-picker').textContent = userProfile.emoji || '😀';
@@ -454,16 +456,17 @@ function syncUserProfile(user) {
 
 onAuthStateChanged(auth, (user) => {
     if (isRegistering) return;
-     
-    if (user) syncUserProfile(user);
-    else {
-        currentUser = null; userProfile = null; document.getElementById('auth-loading').classList.add('hidden');
-        UI.app.classList.replace('flex', 'hidden'); UI.launch.classList.add('hidden'); UI.auth.classList.remove('hidden');
+    if (user) {
+        syncUserProfile(user);
+    } else {
+        cleanupListeners();
+        currentUser = null; userProfile = null;
+        document.getElementById('auth-loading').classList.add('hidden');
+        UI.app.classList.replace('flex', 'hidden');
+        UI.launch.classList.add('hidden');
+        UI.auth.classList.remove('hidden');
         document.getElementById('auth-password').value = '';
-        if (unsubNotifs) { unsubNotifs(); unsubNotifs = null; }
-        if (presenceInterval) { clearInterval(presenceInterval); presenceInterval = null; }
-        if (unsubPresence) { unsubPresence(); unsubPresence = null; }
-        if (userDocUnsub) { userDocUnsub(); userDocUnsub = null; }
+        isLoggingOut = false;
     }
 });
 
@@ -581,7 +584,7 @@ document.getElementById('btn-enter-chat').onclick = () => {
 document.getElementById('btn-back-launch').onclick = () => {
     UI.app.classList.replace('flex', 'hidden');
     UI.launch.classList.remove('hidden');
-    if(unsubMsg) unsubMsg();
+    if(unsubMsg) { unsubMsg(); unsubMsg = null; }
 };
 
 document.getElementById('user-badge').onclick = () => {
@@ -693,8 +696,13 @@ window.jumpToMessage = (id) => {
 };
 
 window.togglePin = async (id, shouldPin) => {
-    if (!userProfile || userProfile.role !== 'super_admin') return;
-    try { await updateDoc(doc(db, `rooms/${ROOM_ID}/messages`, id), { isPinned: shouldPin }); } catch (e) { triggerQuotaWarning(); }
+    if (!userProfile || !['super_admin', 'admin'].includes(userProfile.role)) return alert("Admin permission required.");
+    try { 
+        await updateDoc(doc(db, `rooms/${ROOM_ID}/messages`, id), { isPinned: shouldPin }); 
+    } catch (e) { 
+        triggerQuotaWarning();
+        alert("Failed to pin message. Check permissions/quota.");
+    }
 };
 
 async function sendMessage(text) {
@@ -723,7 +731,14 @@ const updateInput = () => {
 UI.input.addEventListener('input', updateInput);
 
 window.deleteMsg = async (roomId, msgId) => {
-     if(confirm("Rip out this note?")) { await updateDoc(doc(db, `rooms/${roomId}/messages`, msgId), { isDeleted: true, deletedBy: userProfile.username, text: "", isPinned: false }); }
+     if(confirm("Rip out this note?")) { 
+         try {
+             await updateDoc(doc(db, `rooms/${roomId}/messages`, msgId), { isDeleted: true, deletedBy: userProfile.username, text: "", isPinned: false }); 
+         } catch(e) {
+             triggerQuotaWarning();
+             alert("Failed to delete message. Check permissions/quota.");
+         }
+     }
 };
 
 window.toggleExpandMessage = (msgId) => {
@@ -745,7 +760,7 @@ window.toggleExpandMessage = (msgId) => {
 
 function renderMessage(id, data, containerEl, roomStr) {
     const isSelf = currentUser && data.senderId === currentUser.uid;
-    const isSuperAdmin = userProfile && userProfile.role === 'super_admin';
+    const isSuperAdmin = userProfile && ['super_admin', 'admin'].includes(userProfile.role);
     const canDelete = isSelf || (roomStr === ROOM_ID && userProfile && ['super_admin', 'admin'].includes(userProfile.role));
     const timeStr = data.createdAt ? data.createdAt.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '...';
          
@@ -774,9 +789,10 @@ function renderMessage(id, data, containerEl, roomStr) {
     } else {
         contentHtml = parseTagsAndLinks(textRaw);
     }
-    const pinBtn = (roomStr === ROOM_ID && isSuperAdmin && !data.isDeleted) ? `<button onclick="togglePin('${id}', ${!data.isPinned})" class="bg-amber-100 text-amber-800 rounded-full w-6 h-6 text-xs flex items-center justify-center hover:scale-110 sketched-border">📌</button>` : '';
-    const delBtn = (canDelete && !data.isDeleted) ? `<button onclick="deleteMsg('${roomStr}', '${id}')" class="bg-rose-200 text-rose-700 rounded-full w-6 h-6 text-xs flex items-center justify-center hover:scale-110 sketched-border">🗑️</button>` : '';
-    const actionControls = (!data.isDeleted && (pinBtn || delBtn)) ? `<div class="absolute -right-2 -top-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">${pinBtn}${delBtn}</div>` : '';
+    const pinBtn = (roomStr === ROOM_ID && isSuperAdmin && !data.isDeleted) ? `<button onclick="togglePin('${id}', ${!data.isPinned})" class="bg-amber-100 text-amber-800 rounded-full w-6 h-6 text-xs flex items-center justify-center hover:scale-110 sketched-border shadow-sm">📌</button>` : '';
+    const delBtn = (canDelete && !data.isDeleted) ? `<button onclick="deleteMsg('${roomStr}', '${id}')" class="bg-rose-200 text-rose-700 rounded-full w-6 h-6 text-xs flex items-center justify-center hover:scale-110 sketched-border shadow-sm">🗑️</button>` : '';
+    // z-30 pointer-events-auto ensures action buttons remain clickable and don't get covered by links/hitboxes
+    const actionControls = (!data.isDeleted && (pinBtn || delBtn)) ? `<div class="absolute -right-2 -top-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-30 pointer-events-auto">${pinBtn}${delBtn}</div>` : '';
     const pinnedBadge = data.isPinned ? `<span class="text-xs bg-amber-200 text-amber-900 font-bold px-1.5 py-0.5 rounded sketched-border-alt mb-1 inline-block">📌 Pinned</span>` : '';
     const header = (!isSelf && roomStr === ROOM_ID) ? `<div class="flex items-center gap-1 mb-1 cursor-pointer hover:opacity-80" onclick="showProfile('${data.senderId}')"><span class="text-2xl">${escapeHTML(data.senderEmoji || '😀')}</span><span class="text-sm font-bold text-indigo-500 pl-1">${escapeHTML(data.senderName)}</span></div>` : '';
     const wrapper = document.createElement('div');
@@ -1433,7 +1449,6 @@ function openDmChat(targetUid, targetName, targetEmoji, targetBio) {
     loadDmMessages();
 }
 
-// Fixed DM Profile Button Click
 document.getElementById('dm-header-profile-btn')?.addEventListener('click', () => {
     if (activeDmTargetUser) {
         showProfile(activeDmTargetUser.id);
@@ -1481,21 +1496,41 @@ dmSendBtn.onclick = async () => {
     }
 };
 
+// Admin Panel Implementation
 const adminModal = document.getElementById('admin-modal');
 UI.adminBtn.onclick = async () => {
+    if (!userProfile || !['super_admin', 'admin'].includes(userProfile.role)) {
+        return alert("Admin access required.");
+    }
     adminModal?.classList.remove('hidden');
     const list = document.getElementById('admin-user-list');
     if(!list) return;
-    list.innerHTML = 'Flipping pages...';
+    list.innerHTML = '<div class="text-center italic text-slate-500 py-4">Flipping member pages...</div>';
     try {
-        const usersSnap = await getDocs(collection(db, "users")); list.innerHTML = '';
+        const usersSnap = await getDocs(collection(db, "users")); 
+        list.innerHTML = '';
+        if (usersSnap.empty) {
+            list.innerHTML = '<div class="text-center text-slate-500">No users found.</div>';
+            return;
+        }
         usersSnap.forEach(docSnap => {
             const u = docSnap.data();
-            const div = document.createElement('div'); div.className = "flex justify-between items-center bg-white p-2 sketched-border mb-1 text-sm";
-            div.innerHTML = `<span>${escapeHTML(u.username)} (${u.role || 'user'})</span>`;
+            const div = document.createElement('div'); 
+            div.className = "flex justify-between items-center bg-white p-2.5 sketched-border mb-1 text-sm gap-2";
+            div.innerHTML = `
+                <div class="flex items-center gap-2 truncate">
+                    <span class="text-xl">${escapeHTML(u.emoji || '😀')}</span>
+                    <span class="font-bold truncate">@${escapeHTML(u.username)}</span>
+                    <span class="text-xs bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">${escapeHTML(u.role || 'user')}</span>
+                </div>
+                <button onclick="showProfile('${docSnap.id}')" class="bg-indigo-500 text-white text-xs font-bold px-2 py-1 rounded sketched-border-alt">View</button>
+            `;
             list.appendChild(div);
         });
-    } catch (e) { list.innerHTML = `<span class="text-rose-600">Failed to load.</span>`; }
+    } catch (e) { 
+        triggerQuotaWarning();
+        list.innerHTML = `<span class="text-rose-600 font-bold">Failed to load admin roster (Quota limit).</span>`; 
+    }
 };
 
 document.getElementById('admin-close')?.addEventListener('click', () => adminModal?.classList.add('hidden'));
