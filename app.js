@@ -44,7 +44,7 @@ let lastVisibleFeedDoc = null;
 const ROOM_ID = "main-room";
 const SUPER_ADMINS = ['anoimazo1', 'anointo', 'amazo'];
 
-// Original Complete Emoji Array
+// Original Emoji Set
 const ALL_EMOJIS = [
     '😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '🙃',
     '😉', '😊', '😇', '🥰', '😍', '🤩', '😘', '😗', '😚', '😙',
@@ -83,7 +83,7 @@ let settings = {
     theme: localStorage.getItem('pensup_theme') || 'theme-default'
 };
 
-// Apply saved theme on startup
+// Apply theme dynamically
 if (settings.theme) {
     document.body.className = `h-screen w-full flex flex-col relative overflow-hidden text-lg select-none ${settings.theme}`;
     if (UI.themeSel) UI.themeSel.value = settings.theme;
@@ -113,19 +113,19 @@ function applySettings() {
     }
 }
 
-// Offline & Startup Safety Timeout (Prevents APK infinite hang on network failure)
+// Safety Startup Timeout
 const startupTimeout = setTimeout(() => {
     const authLoading = document.getElementById('auth-loading');
     if (authLoading && !authLoading.classList.contains('hidden') && !currentUser) {
-        authLoading.querySelector('#auth-loading-text').textContent = "Offline Mode / Loading Failed";
+        authLoading.querySelector('#auth-loading-text').textContent = "Offline Mode / Connection Slow";
         document.getElementById('offline-error-banner').classList.remove('hidden');
         setTimeout(() => {
             authLoading.classList.add('hidden');
-        }, 3000);
+        }, 2500);
     }
 }, 6000);
 
-// Online / Offline Toast Notifier
+// Online / Offline Notifiers
 window.addEventListener('online', async () => {
     if (currentUser) {
         await updateDoc(doc(db, "users", currentUser.uid), { isOnline: true, lastActive: serverTimestamp() }).catch(() => {});
@@ -137,7 +137,7 @@ window.addEventListener('offline', async () => {
     if (currentUser) {
         await updateDoc(doc(db, "users", currentUser.uid), { isOnline: false }).catch(() => {});
     }
-    showToastNotification("System", "🔴 You are offline. Changes will save locally.", "chat");
+    showToastNotification("System", "🔴 You are offline.", "chat");
 });
 
 function createToastContainer() {
@@ -160,7 +160,7 @@ function showToastNotification(senderName, text, type = 'chat') {
          
     let bgClass = 'bg-yellow-50 border-amber-400';
     let badgeBg = 'bg-amber-200 text-amber-900';
-    let typeLabel = '💬 Main Chat';
+    let typeLabel = '✏️ Main Chat';
          
     if (isDm) { bgClass = 'bg-blue-50 border-blue-400'; badgeBg = 'bg-blue-200 text-blue-900'; typeLabel = '✉️ Direct Message'; }
     else if (isFollow) { bgClass = 'bg-emerald-50 border-emerald-400'; badgeBg = 'bg-emerald-200 text-emerald-900'; typeLabel = '⭐ New Follower'; }
@@ -311,7 +311,7 @@ document.getElementById('btn-login').onclick = async () => {
     catch (e) { document.getElementById('auth-loading').classList.add('hidden'); showError("Invalid username or password."); }
 };
 
-// Logout with Loading Screen and Guard Flag against Spam-clicks
+// Logout with Loading Screen and Guard Flag
 document.getElementById('btn-logout-launch').onclick = async () => {
     if (isLoggingOut) return;
     isLoggingOut = true;
@@ -333,7 +333,7 @@ document.getElementById('btn-logout-launch').onclick = async () => {
     }, 800);
 };
 
-// PC Keybinds Support (Ctrl + Enter to send, Esc to close modals)
+// Keybinds (Ctrl+Enter & Escape)
 window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
         document.querySelectorAll('.fixed:not(.hidden)').forEach(m => {
@@ -483,20 +483,20 @@ tabSticky.onclick = () => { switchView('sticky'); loadStickyNotes(); };
 
 function switchView(v) {
     viewChat.classList.add('hidden'); viewFeed.classList.add('hidden'); viewArcade.classList.add('hidden'); viewSticky.classList.add('hidden');
-    tabChat.className = tabFeed.className = tabArcade.className = tabSticky.className = "px-3 py-1 font-bold text-sm bg-white text-slate-700 rounded sketched-border hover:bg-yellow-200 transition-colors";
+    tabChat.className = tabFeed.className = tabArcade.className = tabSticky.className = "px-3 py-1 font-bold text-sm bg-white text-slate-700 rounded-lg sketched-border hover:bg-yellow-200 transition-colors";
          
     if (v === 'chat') {
         viewChat.classList.remove('hidden');
-        tabChat.className = "px-3 py-1 font-bold text-sm bg-indigo-500 text-white rounded sketched-border transition-colors";
+        tabChat.className = "px-3 py-1 font-bold text-sm bg-indigo-500 text-white rounded-lg sketched-border transition-colors";
     } else if (v === 'feed') {
         viewFeed.classList.remove('hidden');
-        tabFeed.className = "px-3 py-1 font-bold text-sm bg-indigo-500 text-white rounded sketched-border transition-colors";
+        tabFeed.className = "px-3 py-1 font-bold text-sm bg-indigo-500 text-white rounded-lg sketched-border transition-colors";
     } else if (v === 'arcade') {
         viewArcade.classList.remove('hidden');
-        tabArcade.className = "px-3 py-1 font-bold text-sm bg-indigo-500 text-white rounded sketched-border transition-colors";
+        tabArcade.className = "px-3 py-1 font-bold text-sm bg-indigo-500 text-white rounded-lg sketched-border transition-colors";
     } else if (v === 'sticky') {
         viewSticky.classList.remove('hidden');
-        tabSticky.className = "px-3 py-1 font-bold text-sm bg-indigo-500 text-white rounded sketched-border transition-colors";
+        tabSticky.className = "px-3 py-1 font-bold text-sm bg-indigo-500 text-white rounded-lg sketched-border transition-colors";
     }
 }
 
@@ -781,7 +781,7 @@ function renderMessage(id, data, containerEl, roomStr) {
     const header = (!isSelf && roomStr === ROOM_ID) ? `<div class="flex items-center gap-1 mb-1 cursor-pointer hover:opacity-80" onclick="showProfile('${data.senderId}')"><span class="text-2xl">${escapeHTML(data.senderEmoji || '😀')}</span><span class="text-sm font-bold text-indigo-500 pl-1">${escapeHTML(data.senderName)}</span></div>` : '';
     const wrapper = document.createElement('div');
     wrapper.id = `msg-${id}`;
-     wrapper.className = `group flex flex-col gap-1 max-w-[85%] animate-pop relative transition-all duration-300 ${isSelf ? 'self-end items-end' : 'self-start items-start ml-10 sm:ml-12'}`;
+    wrapper.className = `group flex flex-col gap-1 max-w-[85%] animate-pop relative transition-all duration-300 ${isSelf ? 'self-end items-end' : 'self-start items-start ml-10 sm:ml-12'}`;
     wrapper.innerHTML = `${header}${pinnedBadge}<div class="${bgClass} text-slate-800 p-2.5 text-2xl sketched-border relative break-words shadow-xs">${contentHtml} ${actionControls}</div><span class="text-xs font-bold opacity-60 px-1 mt-0.5">${timeStr}</span>`;
     containerEl.appendChild(wrapper);
 }
@@ -1433,7 +1433,7 @@ function openDmChat(targetUid, targetName, targetEmoji, targetBio) {
     loadDmMessages();
 }
 
-// Wire DM Header Profile Button
+// Fixed DM Profile Button Click
 document.getElementById('dm-header-profile-btn')?.addEventListener('click', () => {
     if (activeDmTargetUser) {
         showProfile(activeDmTargetUser.id);
