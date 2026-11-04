@@ -112,7 +112,6 @@ function applySettings() {
     }
 }
 
-// Startup timeout to handle slow/offline firebase connections gracefully
 const startupTimeout = setTimeout(() => {
     const authLoading = document.getElementById('auth-loading');
     if (authLoading && !authLoading.classList.contains('hidden') && !currentUser) {
@@ -308,7 +307,6 @@ document.getElementById('btn-login').onclick = async () => {
     catch (e) { document.getElementById('auth-loading').classList.add('hidden'); showError("Invalid username or password."); }
 };
 
-// Robust Logout with Loading Screen active until Auth resets
 document.getElementById('btn-logout-launch').onclick = async () => {
     if (isLoggingOut) return;
     isLoggingOut = true;
@@ -420,13 +418,21 @@ function syncUserProfile(user) {
                 showError(docSnap.data()?.suspended ? "Account suspended." : "Account missing."); 
                 return; 
             }
-            userProfile = docSnap.data();
-            if (!userProfile.following) userProfile.following = [];
-            currentUser = user;
-                         
-            document.getElementById('auth-loading').classList.add('hidden');
-            UI.auth.classList.add('hidden');
-            UI.launch.classList.remove('hidden');
+            // REPLACE WITH THIS:
+const isFirstSync = !userProfile;
+userProfile = docSnap.data();
+if (!userProfile.following) userProfile.following = [];
+currentUser = user;
+             
+document.getElementById('auth-loading').classList.add('hidden');
+UI.auth.classList.add('hidden');
+
+// Only show launch screen on initial login, don't yank you back if you're already in the app
+if (isFirstSync) {
+    UI.launch.classList.remove('hidden');
+    UI.app.classList.replace('flex', 'hidden');
+}
+
             
             setTimeGreeting();
             document.getElementById('launch-username').textContent = userProfile.username;
@@ -570,8 +576,10 @@ document.getElementById('btn-save-settings')?.addEventListener('click', () => {
     settingsModal.classList.add('hidden');
 });
 
+// Fixed Open Notebook Button Transition
 document.getElementById('btn-enter-chat').onclick = () => {
-    UI.launch.classList.add('hidden'); UI.app.classList.replace('hidden', 'flex');
+    UI.launch.classList.add('hidden'); 
+    UI.app.classList.replace('hidden', 'flex');
     if (userProfile?.role === 'guest') {
         UI.input.placeholder = "Guests are in read-only mode...";
         UI.input.disabled = true;
@@ -701,7 +709,7 @@ window.togglePin = async (id, shouldPin) => {
         await updateDoc(doc(db, `rooms/${ROOM_ID}/messages`, id), { isPinned: shouldPin }); 
     } catch (e) { 
         triggerQuotaWarning();
-        alert("Failed to pin message. Check permissions/quota.");
+        alert("Failed to pin message.");
     }
 };
 
@@ -736,7 +744,7 @@ window.deleteMsg = async (roomId, msgId) => {
              await updateDoc(doc(db, `rooms/${roomId}/messages`, msgId), { isDeleted: true, deletedBy: userProfile.username, text: "", isPinned: false }); 
          } catch(e) {
              triggerQuotaWarning();
-             alert("Failed to delete message. Check permissions/quota.");
+             alert("Failed to delete message.");
          }
      }
 };
@@ -791,7 +799,6 @@ function renderMessage(id, data, containerEl, roomStr) {
     }
     const pinBtn = (roomStr === ROOM_ID && isSuperAdmin && !data.isDeleted) ? `<button onclick="togglePin('${id}', ${!data.isPinned})" class="bg-amber-100 text-amber-800 rounded-full w-6 h-6 text-xs flex items-center justify-center hover:scale-110 sketched-border shadow-sm">📌</button>` : '';
     const delBtn = (canDelete && !data.isDeleted) ? `<button onclick="deleteMsg('${roomStr}', '${id}')" class="bg-rose-200 text-rose-700 rounded-full w-6 h-6 text-xs flex items-center justify-center hover:scale-110 sketched-border shadow-sm">🗑️</button>` : '';
-    // z-30 pointer-events-auto ensures action buttons remain clickable and don't get covered by links/hitboxes
     const actionControls = (!data.isDeleted && (pinBtn || delBtn)) ? `<div class="absolute -right-2 -top-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-30 pointer-events-auto">${pinBtn}${delBtn}</div>` : '';
     const pinnedBadge = data.isPinned ? `<span class="text-xs bg-amber-200 text-amber-900 font-bold px-1.5 py-0.5 rounded sketched-border-alt mb-1 inline-block">📌 Pinned</span>` : '';
     const header = (!isSelf && roomStr === ROOM_ID) ? `<div class="flex items-center gap-1 mb-1 cursor-pointer hover:opacity-80" onclick="showProfile('${data.senderId}')"><span class="text-2xl">${escapeHTML(data.senderEmoji || '😀')}</span><span class="text-sm font-bold text-indigo-500 pl-1">${escapeHTML(data.senderName)}</span></div>` : '';
@@ -1496,8 +1503,25 @@ dmSendBtn.onclick = async () => {
     }
 };
 
-// Admin Panel Implementation
+// --- RESTORED ADMIN PANEL WITH BAN/PROMOTE & GUEST FILTER ---
 const adminModal = document.getElementById('admin-modal');
+
+window.adminToggleBan = async (targetUid, currentSuspended) => {
+    if (!userProfile || userProfile.role !== 'super_admin') return alert("Super Admin required.");
+    try {
+        await updateDoc(doc(db, "users", targetUid), { suspended: !currentSuspended });
+        UI.adminBtn.click();
+    } catch(e) { alert("Failed to update ban status."); }
+};
+
+window.adminSetRole = async (targetUid, newRole) => {
+    if (!userProfile || userProfile.role !== 'super_admin') return alert("Super Admin required.");
+    try {
+        await updateDoc(doc(db, "users", targetUid), { role: newRole });
+        UI.adminBtn.click();
+    } catch(e) { alert("Failed to update role."); }
+};
+
 UI.adminBtn.onclick = async () => {
     if (!userProfile || !['super_admin', 'admin'].includes(userProfile.role)) {
         return alert("Admin access required.");
@@ -1505,28 +1529,45 @@ UI.adminBtn.onclick = async () => {
     adminModal?.classList.remove('hidden');
     const list = document.getElementById('admin-user-list');
     if(!list) return;
-    list.innerHTML = '<div class="text-center italic text-slate-500 py-4">Flipping member pages...</div>';
+    list.innerHTML = '<div class="text-center italic text-slate-500 py-4">Flipping member roster...</div>';
     try {
         const usersSnap = await getDocs(collection(db, "users")); 
         list.innerHTML = '';
-        if (usersSnap.empty) {
-            list.innerHTML = '<div class="text-center text-slate-500">No users found.</div>';
-            return;
-        }
+        let count = 0;
         usersSnap.forEach(docSnap => {
             const u = docSnap.data();
+            const isGuest = u.role === 'guest' || (u.username && u.username.startsWith('guest_'));
+            if (isGuest) return; // Filter out guests
+            count++;
+            const isBanned = u.suspended === true;
+            const role = u.role || 'user';
+            const isSuper = userProfile.role === 'super_admin';
+            
             const div = document.createElement('div'); 
             div.className = "flex justify-between items-center bg-white p-2.5 sketched-border mb-1 text-sm gap-2";
+            
+            const actionButtons = isSuper && docSnap.id !== currentUser.uid ? `
+                <div class="flex items-center gap-1">
+                    <button onclick="adminToggleBan('${docSnap.id}', ${isBanned})" class="text-xs font-bold px-2 py-1 rounded sketched-border-alt ${isBanned ? 'bg-emerald-200 text-emerald-900' : 'bg-rose-200 text-rose-900'}">${isBanned ? 'Unban' : 'Ban'}</button>
+                    <select onchange="adminSetRole('${docSnap.id}', this.value)" class="text-xs p-1 bg-amber-50 border rounded font-bold">
+                        <option value="user" ${role==='user'?'selected':''}>User</option>
+                        <option value="admin" ${role==='admin'?'selected':''}>Admin</option>
+                        <option value="super_admin" ${role==='super_admin'?'selected':''}>Super Admin</option>
+                    </select>
+                </div>
+            ` : `<span class="text-xs font-bold bg-amber-100 text-amber-900 px-2 py-0.5 rounded">${role.toUpperCase()}</span>`;
+
             div.innerHTML = `
-                <div class="flex items-center gap-2 truncate">
+                <div class="flex items-center gap-2 truncate cursor-pointer" onclick="showProfile('${docSnap.id}')">
                     <span class="text-xl">${escapeHTML(u.emoji || '😀')}</span>
                     <span class="font-bold truncate">@${escapeHTML(u.username)}</span>
-                    <span class="text-xs bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">${escapeHTML(u.role || 'user')}</span>
+                    ${isBanned ? '<span class="text-xs bg-rose-600 text-white px-1.5 rounded">Banned</span>' : ''}
                 </div>
-                <button onclick="showProfile('${docSnap.id}')" class="bg-indigo-500 text-white text-xs font-bold px-2 py-1 rounded sketched-border-alt">View</button>
+                ${actionButtons}
             `;
             list.appendChild(div);
         });
+        if (count === 0) list.innerHTML = '<div class="text-center text-slate-500">No registered members found.</div>';
     } catch (e) { 
         triggerQuotaWarning();
         list.innerHTML = `<span class="text-rose-600 font-bold">Failed to load admin roster (Quota limit).</span>`; 
