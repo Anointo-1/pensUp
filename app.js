@@ -407,42 +407,51 @@ function cleanupListeners() {
 
 function syncUserProfile(user) {
     clearTimeout(startupTimeout);
-    if (userDocUnsub) { userDocUnsub(); userDocUnsub = null; }
-    userDocUnsub = onSnapshot(doc(db, "users", user.uid), 
+    if (userDocUnsub) { userDocUnsub();
+        userDocUnsub = null; }
+    
+    userDocUnsub = onSnapshot(doc(db, "users", user.uid),
         (docSnap) => {
             if (isRegistering) return;
-             
-            if (!docSnap.exists() || docSnap.data().suspended) { 
+            
+            if (!docSnap.exists() || docSnap.data().suspended) {
                 document.getElementById('auth-loading').classList.add('hidden');
-                signOut(auth); 
-                showError(docSnap.data()?.suspended ? "Account suspended." : "Account missing."); 
-                return; 
+                signOut(auth);
+                showError(docSnap.data()?.suspended ? "Account suspended." : "Account missing.");
+                return;
             }
-            // REPLACE WITH THIS:
-const isFirstSync = !userProfile;
-userProfile = docSnap.data();
-if (!userProfile.following) userProfile.following = [];
-currentUser = user;
-             
-document.getElementById('auth-loading').classList.add('hidden');
-UI.auth.classList.add('hidden');
-
-// Only show launch screen on initial login, don't yank you back if you're already in the app
-if (isFirstSync) {
-    UI.launch.classList.remove('hidden');
-    UI.app.classList.replace('flex', 'hidden');
-}
-
+            
+            const isFirstSync = !userProfile;
+            
+            // 1. Update the local variable FIRST
+            userProfile = docSnap.data();
+            if (!userProfile.following) userProfile.following = [];
+            currentUser = user;
+            
+            document.getElementById('auth-loading').classList.add('hidden');
+            UI.auth.classList.add('hidden');
+            
+            // Only show launch screen on initial login
+            if (isFirstSync) {
+                UI.launch.classList.remove('hidden');
+                UI.app.classList.replace('flex', 'hidden');
+            }
             
             setTimeGreeting();
             document.getElementById('launch-username').textContent = userProfile.username;
             document.getElementById('btn-open-emoji-picker').textContent = userProfile.emoji || '😀';
-            document.getElementById('launch-bio').value = userProfile.bio || '';
-                         
+            
+            // 2. Safe Bio Update (only updates if the user is NOT typing)
+            const bioEl = document.getElementById('launch-bio');
+            if (bioEl && document.activeElement !== bioEl) {
+                bioEl.value = userProfile.bio || '';
+            }
+            
             if (userProfile.role === 'guest') {
-                document.getElementById('launch-bio').disabled = true;
+                if (bioEl) bioEl.disabled = true;
                 document.getElementById('btn-open-emoji-picker').disabled = true;
             }
+            
             if (['super_admin', 'admin'].includes(userProfile.role)) {
                 UI.adminBtn.classList.remove('hidden');
                 document.getElementById('btn-open-puzzle-creator').classList.remove('hidden');
@@ -450,13 +459,18 @@ if (isFirstSync) {
                 UI.adminBtn.classList.add('hidden');
                 document.getElementById('btn-open-puzzle-creator').classList.add('hidden');
             }
-            if (userProfile.role === 'super_admin') document.getElementById('btn-edit-board').classList.remove('hidden');
-                         
+            
+            if (userProfile.role === 'super_admin') {
+                document.getElementById('btn-edit-board').classList.remove('hidden');
+            }
+            
             listenForNotifications(user.uid);
             startPresenceHeartbeat(user.uid);
             handleUrlRouting();
-        }, 
-        (error) => { document.getElementById('auth-loading').classList.add('hidden'); }
+        },
+        (error) => {
+            document.getElementById('auth-loading').classList.add('hidden');
+        }
     );
 }
 
@@ -485,7 +499,11 @@ const viewFeed = document.getElementById('view-feed');
 const viewArcade = document.getElementById('view-arcade');
 const viewSticky = document.getElementById('view-sticky');
 
-tabChat.onclick = () => switchView('chat');
+tabChat.onclick = () => {
+    switchView('chat');
+    if (!unsubMsg) loadMessages();
+};
+
 tabFeed.onclick = () => { switchView('feed'); loadGlobalFeed(); };
 tabArcade.onclick = () => { switchView('arcade'); loadArcadePuzzles(); };
 tabSticky.onclick = () => { switchView('sticky'); loadStickyNotes(); };
@@ -537,11 +555,24 @@ document.getElementById('btn-save-custom-emoji')?.addEventListener('click', () =
      if (custom) selectEmoji(custom);
 });
 
-document.getElementById('launch-bio')?.addEventListener('blur', async (e) => {
-    if (userProfile?.role === 'guest') return;
-    userProfile.bio = e.target.value.trim();
-     await updateDoc(doc(db, "users", currentUser.uid), { bio: userProfile.bio });
+const bioInput = document.getElementById('launch-bio');
+
+bioInput?.addEventListener('input', (e) => {
+    if (userProfile) {
+        userProfile.bio = e.target.value.trim();
+    }
 });
+
+bioInput?.addEventListener('blur', async (e) => {
+    if (userProfile?.role === 'guest' || !currentUser) return;
+    const newBio = e.target.value.trim();
+    try {
+        await updateDoc(doc(db, "users", currentUser.uid), { bio: newBio });
+    } catch (err) {
+        triggerQuotaWarning();
+    }
+});
+
 
 document.getElementById('btn-edit-board')?.addEventListener('click', async () => {
      const txt = prompt("New notice board text:");
@@ -635,16 +666,28 @@ function loadMessages() {
                 renderPinnedSection(pinnedList);
                 UI.msgContainer.scrollTo(0, UI.msgContainer.scrollHeight);
             }
+            
             if (isInitialLoadDone) {
                 snapshot.docChanges().forEach((change) => {
                     const data = change.doc.data();
-                    if (change.type === "added" && data.senderId !== currentUser.uid && !data.isDeleted) {
-                        notifyUser(data.senderName, data.text, 'chat');
-                        renderMessage(change.doc.id, data, UI.msgContainer, ROOM_ID);
-                        UI.msgContainer.scrollTo(0, UI.msgContainer.scrollHeight);
+                    if (change.type === "added" && !data.isDeleted) {
+                        if (!document.getElementById(`msg-${change.doc.id}`)) {
+                            if (data.senderId !== currentUser.uid) {
+                                notifyUser(data.senderName, data.text, 'chat');
+                            }
+                            renderMessage(change.doc.id, data, UI.msgContainer, ROOM_ID);
+                            UI.msgContainer.scrollTo(0, UI.msgContainer.scrollHeight);
+                        }
+                    } else if (change.type === "modified") {
+                        // Dynamically update the timestamp once the server timestamp resolves
+                        const timeEl = document.getElementById(`time-${change.doc.id}`);
+                        if (timeEl && data.createdAt) {
+                            timeEl.textContent = data.createdAt.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                        }
                     }
                 });
             }
+
             isInitialLoadDone = true;
         }, (error) => { 
             triggerQuotaWarning();
@@ -805,7 +848,8 @@ function renderMessage(id, data, containerEl, roomStr) {
     const wrapper = document.createElement('div');
     wrapper.id = `msg-${id}`;
     wrapper.className = `group flex flex-col gap-1 max-w-[85%] animate-pop relative transition-all duration-300 ${isSelf ? 'self-end items-end' : 'self-start items-start ml-10 sm:ml-12'}`;
-    wrapper.innerHTML = `${header}${pinnedBadge}<div class="${bgClass} text-slate-800 p-2.5 text-2xl sketched-border relative break-words shadow-xs">${contentHtml} ${actionControls}</div><span class="text-xs font-bold opacity-60 px-1 mt-0.5">${timeStr}</span>`;
+    wrapper.innerHTML = `${header}${pinnedBadge}<div class="${bgClass} text-slate-800 p-2.5 text-2xl sketched-border relative break-words shadow-xs">${contentHtml} ${actionControls}</div><span id="time-${id}" class="text-xs font-bold opacity-60 px-1 mt-0.5">${timeStr}</span>`;
+
     containerEl.appendChild(wrapper);
 }
 
